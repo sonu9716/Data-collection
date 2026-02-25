@@ -1,0 +1,36 @@
+services:
+  # ── Backend API ──────────────────────────────────────────────
+  - type: web
+    name: data-collection-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: https://data-collection.onrender.com
+      - fromDatabase:
+          name: data-collection-db
+          property: connectionString
+        envVarKey: DATABASE_URL
+
+  # ── Frontend Static Site ──────────────────────────────────────
+  - type: web
+    name: data-collection
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: build
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://data-collection-api.onrender.com/api
+
+databases:
+  - name: data-collection-db
+    databaseName: data_collection
+    user: postgres
+    plan: free

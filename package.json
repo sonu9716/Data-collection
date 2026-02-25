@@ -1,0 +1,13 @@
+{
+    "name": "data-collection-platform",
+    "version": "1.0.0",
+    "description": "Root script to run both backend and frontend",
+    "scripts": {
+        "start": "concurrently \"npm run start --prefix backend\" \"npm run start --prefix frontend\"",
+        "setup": "npm install && npm install --prefix backend && npm install --prefix frontend",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.0"
+    }
+}

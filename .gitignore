@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Environment files
+.env
+backend/.env
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+
+# Build output
+frontend/build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Local data & uploads
+backend/local_data.json
+backend/uploads/
+
+# OS files
+.DS_Store
+Thumbs.db
