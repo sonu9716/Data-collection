@@ -4,9 +4,10 @@
 // ============================================================================
 
 import React, { useState } from 'react';
+import { GoogleLogin } from '@react-oauth/google';
 import loginBg from '../login_bg.png';
 
-function LoginRegister({ onLogin, onRegister, error }) {
+function LoginRegister({ onLogin, onRegister, onGoogleLogin, error }) {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -57,6 +58,21 @@ function LoginRegister({ onLogin, onRegister, error }) {
     }
   };
 
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setLoading(true);
+    try {
+      if (credentialResponse.credential) {
+        await onGoogleLogin(credentialResponse.credential);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleError = () => {
+    console.error('Google Login Failed');
+  };
+
   return (
     <div className="auth-container" style={{
       backgroundImage: `url(${loginBg})`,
@@ -72,6 +88,28 @@ function LoginRegister({ onLogin, onRegister, error }) {
         <h1>{isLogin ? 'Login' : 'Register'}</h1>
 
         {error && <div className="error-message">{error}</div>}
+
+        <div className="google-auth-section" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'center' }}>
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={handleGoogleError}
+            useOneTap
+            theme="filled_blue"
+            shape="rectangular"
+          />
+        </div>
+
+        <div className="divider" style={{
+          display: 'flex',
+          alignItems: 'center',
+          textAlign: 'center',
+          margin: '20px 0',
+          color: '#888'
+        }}>
+          <hr style={{ flex: 1 }} />
+          <span style={{ padding: '0 10px' }}>OR</span>
+          <hr style={{ flex: 1 }} />
+        </div>
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">

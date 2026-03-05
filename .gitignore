@@ -9,6 +9,12 @@ frontend/.env
 frontend/.env.local
 frontend/.env.production
 
+# Google Service Account key (NEVER commit this!)
+service-account-key.json
+backend/service-account-key.json
+*service-account*.json
+*-credentials.json
+
 # Build output
 frontend/build/
 

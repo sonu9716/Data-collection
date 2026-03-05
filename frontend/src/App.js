@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import './App.css';
 
 // Import pages
@@ -19,7 +20,6 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  // Removed timeout to allow for large video uploads
 });
 
 // JWT Interceptor
@@ -34,17 +34,14 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// ============================================================================
-// MAIN APP COMPONENT
-// ============================================================================
-
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Check authentication on mount
+  const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID || 'dummy-client-id';
+
   useEffect(() => {
     checkAuthentication();
   }, []);
@@ -79,6 +76,20 @@ function App() {
     }
   };
 
+  const handleGoogleLogin = async (credential) => {
+    try {
+      setError(null);
+      const response = await api.post('/auth/google', { token: credential });
+      localStorage.setItem('access_token', response.data.access_token);
+      setUser(response.data.user);
+      setIsAuthenticated(true);
+      return true;
+    } catch (err) {
+      setError(err.response?.data?.error || 'Google Login failed');
+      return false;
+    }
+  };
+
   const handleRegister = async (formData) => {
     try {
       setError(null);
@@ -107,37 +118,46 @@ function App() {
   }
 
   return (
-    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <div className="app">
-        <Routes>
-          {!isAuthenticated ? (
-            <>
-              <Route
-                path="/"
-                element={<LoginRegister onLogin={handleLogin} onRegister={handleRegister} error={error} />}
-              />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </>
-          ) : (
-            <>
-              <Route
-                path="/"
-                element={<Welcome user={user} onLogout={handleLogout} api={api} />}
-              />
-              <Route
-                path="/dashboard"
-                element={<Dashboard user={user} api={api} onLogout={handleLogout} />}
-              />
-              <Route
-                path="/admin"
-                element={<AdminDashboard user={user} api={api} onLogout={handleLogout} />}
-              />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </>
-          )}
-        </Routes>
-      </div>
-    </Router>
+    <GoogleOAuthProvider clientId={googleClientId}>
+      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <div className="app">
+          <Routes>
+            {!isAuthenticated ? (
+              <>
+                <Route
+                  path="/"
+                  element={
+                    <LoginRegister
+                      onLogin={handleLogin}
+                      onRegister={handleRegister}
+                      onGoogleLogin={handleGoogleLogin}
+                      error={error}
+                    />
+                  }
+                />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </>
+            ) : (
+              <>
+                <Route
+                  path="/"
+                  element={<Welcome user={user} onLogout={handleLogout} api={api} />}
+                />
+                <Route
+                  path="/dashboard"
+                  element={<Dashboard user={user} api={api} onLogout={handleLogout} />}
+                />
+                <Route
+                  path="/admin"
+                  element={<AdminDashboard user={user} api={api} onLogout={handleLogout} />}
+                />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </>
+            )}
+          </Routes>
+        </div>
+      </Router>
+    </GoogleOAuthProvider>
   );
 }
 

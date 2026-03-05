@@ -13,6 +13,16 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         value: https://data-collection.onrender.com
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_DRIVE_ENABLED
+        value: "true"
+      - key: GOOGLE_SERVICE_ACCOUNT_KEY_JSON
+        sync: false
+      - key: GOOGLE_DRIVE_ROOT_FOLDER_ID
+        sync: false
+      - key: GOOGLE_DRIVE_ROOT_FOLDER_NAME
+        value: DataCollection
       - fromDatabase:
           name: data-collection-db
           property: connectionString
@@ -28,6 +38,8 @@ services:
     envVars:
       - key: REACT_APP_API_URL
         value: https://data-collection-api.onrender.com/api
+      - key: REACT_APP_GOOGLE_CLIENT_ID
+        sync: false
 
 databases:
   - name: data-collection-db

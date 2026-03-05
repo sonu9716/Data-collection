@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "datacollectionplatform-489311",
+  "private_key_id": "48a53850a60aff6b45ce19168c89a8e4985adc65",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDNcdfqaX4KqQIX\noc75AF0jpaNCOSIAlnh629Q+PcN1YmWveofE/KxEvN9cbtAVrj8ZtqFkCUay49MW\nZwAw2jic4pBROVvXzkP73/deU1XKabY2HOP4UkWA2q9izcpJHnBPbLMokAwBAdMz\nHuoRONp6OtGDxvL2e8j+qI/MThttVRIWkMeEWuYXUBPbOzHTleQEcf3x8YyKX3re\n8eN6jfVD2K0+UDhPop4wMePObERXaN6MoRg9CjSJTRZ3uFPMkJMUsR8qICEmiFxR\n7lDI8WwRtUfq5e9L5/Mjbv6x34nhnxFHxq0bv6pHZe8x/oxN5m9ye4P1/SlE5JGl\nUATSQ8W1AgMBAAECggEAAXo/dUjLm+6vPIBGFCBeix0WhClpBzFjLcRa+GpKoj4n\nlmV+iHomEFsouBTL8Pv51DODYaF3crM/bLp86TJd6d2Z8Bubf30qRqt2WfqmHqM3\n/kJNmWxDYl6FmGOmgB7J6/2kzuE0/4+FzKj87KFzYMxU1BUgNjREXnXT4uzvjDpn\nGQOlPF7lp7OqoFmT7CtsHDjMwLD+VX7ibSRNaO8iIsDjNpZQOvbwiQ5e9r03/BD5\n8tnjA6Pr6bNIJxMddnpiP0AfdSvVfKw7ewvA0uaWyjLMQegb1txyjwYkIoeuxjVt\nLbmtixGnrr0ZCjWLd4JjgbGRMtzxQ4AxxuVH9+yD2QKBgQDvLnAKJTgNirkJZGVN\n3agzLNLDErtCTAoejmYxE+mhxVkRmmYhsOJMcZgSGPBLKwiU+6HqXc7KFLAIr1TZ\nb+mzeOomGDwKnvBuFxMMCf8K7b1JETl/hmhvrR9L5BLLLWA8T5v+FFjUJ+K19UP6\n0c0MsEWGhWWPKPdNg0rHOQ9TawKBgQDb5BpyxYlN53tX8Xlon753dnLjKNrZATO6\ncdMXekMQ7jENQsS1+KOfmNAfUXKHI+NbZxVXC5+YpZJFWfxZ/pdFji3I7spiS0a9\nA99Sgyh/2lNbho4oovGGpV2NgX9F0uoSn7Z8p4U0xxmc08QooRx0dN0nkjCy2lH1\nVCOMmsCzXwKBgHKT+WIy0DZUhS3FpW32yFOznkeK2p/400QuDTBnjJ1Nb8yp/VEY\nbmAWbrYEsmAf/l14aelfBOfznxyZ+XisTvUF8I1NQL4Jw73JWfuDcmUm3G17TeMU\nXUVaVsrBOGuSki5yKJU/5AnGDaoDE4y9IpB4hOXbU3qQMmA0jAcCA6B/AoGABdFl\nOcAsP9luFAeZlMEVQwfpRkVgdPlpKve0BB0CBUKoHZe0qLPpcGGUsB9xjk3OyC5U\nDDeMg3duBVO6L49i5T47y+M1i6A+QOYHVKGPwsI+Dl/jBwQ4q71YWlQgz/Iiq1d6\ndpXgGmNiNBoOSJzqqdIlv9RIYZMRNBKD1kaJ7rUCgYEAyqDsRO05MPi2Yek4TTpI\nWjkGyobx3AAQX0uqbOQ/Jn3n459ESNDynQbIs+2Chv0LvHFct8+0yKrOdGhmGjZ6\nqhjjUchYzhkJiedpFv/IwDsFsG9E/Q2bAaQG5QmCNTVPA1Sz4agGbY5P3xJNfF3C\naIsxaYCnhrTJGUqg15BNcN4=\n-----END PRIVATE KEY-----\n",
+  "client_email": "data-collection-drive@datacollectionplatform-489311.iam.gserviceaccount.com",
+  "client_id": "115740838992211837870",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/data-collection-drive%40datacollectionplatform-489311.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

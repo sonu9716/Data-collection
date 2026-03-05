@@ -14,6 +14,9 @@ const { Pool } = require('pg');
 const winston = require('winston');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const googleDrive = require('./google-drive-manager');
+const { OAuth2Client } = require('google-auth-library');
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 dotenv.config();
 
@@ -26,7 +29,7 @@ const PORT = process.env.PORT || 5000;
 
 app.use(helmet());
 app.use(cors({
-  origin: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'],
+  origin: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:5001'],
   credentials: true
 }));
 
@@ -378,6 +381,59 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ error: 'Token required' });
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken: token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const { email, sub: googleId, name, picture } = payload;
+
+    // Check if user exists
+    let result = await pool.query(
+      'SELECT id, email, age, gender, institution FROM users WHERE email = $1',
+      [email]
+    );
+
+    let user;
+    if (result.rows.length === 0) {
+      // Create new user for Google login if not exists
+      // Note: password_hash is set to a random string since they login via Google
+      const randomPass = require('crypto').randomBytes(16).toString('hex');
+      const hashedPassword = await bcrypt.hash(randomPass, 10);
+      const insertResult = await pool.query(
+        `INSERT INTO users (email, password_hash)
+         VALUES ($1, $2)
+         RETURNING id, email, created_at`,
+        [email, hashedPassword]
+      );
+      user = insertResult.rows[0];
+      logger.info(`New user registered via Google: ${user.id}`);
+    } else {
+      user = result.rows[0];
+    }
+
+    const jwtToken = jwt.sign(
+      { id: user.id, email: user.email },
+      process.env.JWT_SECRET || 'jwt-secret-key',
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      message: 'Google login successful',
+      access_token: jwtToken,
+      user: user
+    });
+  } catch (error) {
+    logger.error('Google login error:', error);
+    res.status(500).json({ error: 'Google authentication failed' });
+  }
+});
+
 app.get('/api/auth/verify', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
@@ -475,6 +531,13 @@ app.post('/api/survey/submit', authenticateToken, async (req, res) => {
     const response = result.rows[0];
     logger.info(`Survey submitted for user ${userId}`);
 
+    // Upload to Google Drive if enabled
+    if (process.env.GOOGLE_DRIVE_ENABLED === 'true') {
+      const filename = `survey_${assessment_type}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}.json`;
+      googleDrive.uploadUserData(req.body, filename, userId, 'surveys')
+        .catch(err => logger.error('Failed to upload survey to Google Drive:', err));
+    }
+
     res.status(201).json({
       message: 'Survey submitted successfully',
       response_id: response.id,
@@ -526,18 +589,48 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
 
     const videoType = req.body.video_type || 'cognitive_test';
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '');
-    const s3Key = `videos/participant-${userId}/${videoType}_${timestamp}.mp4`;
+    const filename = `${videoType}_${timestamp}.mp4`;
+    const s3Key = `videos/participant-${userId}/${filename}`;
     const fileSizeMB = req.file.size / (1024 * 1024);
 
-    // Check if AWS credentials are valid placeholders
+    // Determine storage backend priority:
+    // 1. Google Drive (if GOOGLE_DRIVE_ENABLED=true)
+    // 2. AWS S3 (if AWS credentials are configured)
+    // 3. Local filesystem (fallback)
+    const isDriveEnabled = process.env.GOOGLE_DRIVE_ENABLED === 'true';
     const isAwsConfigured = process.env.AWS_ACCESS_KEY_ID &&
       !process.env.AWS_ACCESS_KEY_ID.includes('your-aws-access-key');
 
     let videoUrl = '';
-    let storageType = 's3';
+    let storageType = 'local';
+    let driveFileId = null;
 
-    if (isAwsConfigured) {
-      // Upload to S3
+    if (isDriveEnabled) {
+      // ── Google Drive upload ──────────────────────────────────────────────
+      try {
+        const driveResult = await googleDrive.uploadVideo(
+          req.file.buffer,
+          filename,
+          userId
+        );
+        videoUrl = driveResult.driveUrl;
+        driveFileId = driveResult.fileId;
+        storageType = 'google-drive';
+        logger.info(`Video uploaded to Google Drive for user ${userId}: ${driveResult.fileId}`);
+      } catch (driveErr) {
+        logger.error('Google Drive upload failed, falling back to local:', driveErr.message);
+        isDriveEnabled && logger.warn('Tip: check GOOGLE_SERVICE_ACCOUNT_KEY_PATH and Drive API access.');
+        // Fall through to local storage
+        const fs = require('fs');
+        const path = require('path');
+        const uploadsDir = path.join(__dirname, 'uploads', 'videos');
+        if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+        fs.writeFileSync(path.join(uploadsDir, filename), req.file.buffer);
+        videoUrl = `/uploads/videos/${filename}`;
+        storageType = 'local';
+      }
+    } else if (isAwsConfigured) {
+      // ── AWS S3 upload ────────────────────────────────────────────────────
       const params = {
         Bucket: s3BucketName,
         Key: s3Key,
@@ -545,25 +638,20 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
         ContentType: req.file.mimetype,
         ServerSideEncryption: 'AES256'
       };
-
       await s3.upload(params).promise();
       videoUrl = `https://${s3BucketName}.s3.amazonaws.com/${s3Key}`;
+      storageType = 's3';
     } else {
-      // Fallback to Local Storage
+      // ── Local filesystem fallback ─────────────────────────────────────────
       const fs = require('fs');
       const path = require('path');
       const uploadsDir = path.join(__dirname, 'uploads', 'videos');
-
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
-      }
-
-      const localFilePath = path.join(uploadsDir, `${videoType}_${timestamp}.mp4`);
+      if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+      const localFilePath = path.join(uploadsDir, filename);
       fs.writeFileSync(localFilePath, req.file.buffer);
-
-      videoUrl = `/uploads/videos/${videoType}_${timestamp}.mp4`; // Local URL
+      videoUrl = `/uploads/videos/${filename}`;
       storageType = 'local';
-      logger.warn('AWS S3 not configured. Saved video locally.');
+      logger.warn('AWS S3 and Google Drive not configured. Saved video locally.');
     }
 
     const result = await pool.query(
@@ -574,8 +662,8 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
       [
         userId,
         videoType,
-        storageType === 's3' ? s3BucketName : 'local-storage',
-        storageType === 's3' ? s3Key : videoUrl,
+        storageType === 's3' ? s3BucketName : storageType,
+        storageType === 's3' ? s3Key : (driveFileId || videoUrl),
         videoUrl,
         fileSizeMB,
         'completed'
@@ -583,12 +671,14 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
     );
 
     const video = result.rows[0];
-    logger.info(`Video uploaded for user ${userId} to ${storageType}`);
+    logger.info(`Video saved for user ${userId} via ${storageType}`);
 
     res.status(201).json({
       message: `Video uploaded successfully (${storageType})`,
       video_id: video.id,
-      s3_key: video.s3_key,
+      storage: storageType,
+      video_url: videoUrl,
+      drive_file_id: driveFileId,
       file_size_mb: video.file_size_mb
     });
   } catch (error) {
@@ -724,6 +814,13 @@ app.post('/api/tests/submit', authenticateToken, async (req, res) => {
 
     logger.info(`Cognitive test submitted for user ${userId}: ${test_type}`);
 
+    // Upload to Google Drive if enabled
+    if (process.env.GOOGLE_DRIVE_ENABLED === 'true') {
+      const filename = `test_${test_type}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}.json`;
+      googleDrive.uploadUserData(req.body, filename, userId, 'tests')
+        .catch(err => logger.error('Failed to upload test results to Google Drive:', err));
+    }
+
     res.status(201).json({
       message: 'Test result submitted successfully',
       result: result.rows[0]
@@ -807,22 +904,51 @@ app.get('/api/admin/export/:dataType', authenticateToken, async (req, res) => {
 
     if (dataType === 'surveys') {
       query = 'SELECT * FROM survey_responses ORDER BY timestamp DESC';
-      filename = 'surveys.json';
+      filename = `surveys_export_${new Date().toISOString().slice(0, 10)}.json`;
     } else if (dataType === 'tests') {
       query = 'SELECT * FROM cognitive_test_results ORDER BY timestamp DESC';
-      filename = 'cognitive_tests.json';
+      filename = `cognitive_tests_export_${new Date().toISOString().slice(0, 10)}.json`;
     } else if (dataType === 'videos') {
       query = 'SELECT * FROM video_metadata ORDER BY created_at DESC';
-      filename = 'videos.json';
+      filename = `videos_export_${new Date().toISOString().slice(0, 10)}.json`;
     } else {
       return res.status(400).json({ error: 'Invalid data type' });
     }
 
     const result = await pool.query(query);
+    const jsonContent = JSON.stringify(result.rows, null, 2);
+
+    // Optionally push the export to Google Drive
+    let driveInfo = null;
+    if (process.env.GOOGLE_DRIVE_ENABLED === 'true') {
+      try {
+        driveInfo = await googleDrive.uploadExport(jsonContent, filename);
+        logger.info(`Export uploaded to Google Drive: ${filename} -> ${driveInfo.fileId}`);
+      } catch (driveErr) {
+        logger.error('Failed to upload export to Google Drive:', driveErr.message);
+        // Non-fatal: still return the download as normal
+      }
+    }
 
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.json(result.rows);
+
+    // Include Drive metadata in response headers if available
+    if (driveInfo) {
+      res.setHeader('X-Drive-File-Id', driveInfo.fileId);
+      res.setHeader('X-Drive-Url', driveInfo.driveUrl);
+    }
+
+    res.json({
+      data: result.rows,
+      ...(driveInfo ? {
+        drive_backup: {
+          file_id: driveInfo.fileId,
+          url: driveInfo.driveUrl,
+          download_url: driveInfo.downloadUrl
+        }
+      } : {})
+    });
   } catch (error) {
     logger.error('Export error:', error);
     res.status(500).json({ error: 'Export failed' });
