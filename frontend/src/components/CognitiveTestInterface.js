@@ -260,7 +260,7 @@ function SARTTest({ testData, setTestData, onFinish }) {
         <>
           <div className="sart-display" style={{ fontSize: '5rem', margin: '20px' }}>{currentNumber}</div>
           <p>Click BUTTON when you see any number <b>EXCEPT 3</b></p>
-          <button onClick={handleClick} className="btn-large" style={{ padding: '20px 40px', fontSize: '1.5rem' }} disabled={hasClicked}>
+          <button onClick={handleClick} className="btn-large" style={{ padding: '20px 40px', fontSize: '1.5rem', backgroundColor: '#4CAF50', color: 'white' }} disabled={hasClicked}>
             {hasClicked ? 'Wait...' : 'CLICK HERE'}
           </button>
         </>
@@ -603,7 +603,7 @@ function GoNoGoTest({ testData, setTestData, onFinish }) {
           </div>
           <p style={{ minHeight: '24px', color: message.includes('Oops') || message.includes('Missed') ? 'red' : 'green' }}>{message}</p>
           <p>CLICK 'RESPONSE' whenever you see <b>X</b>. Do NOT click for <b>O</b>.</p>
-          <button onClick={handleResponse} className="btn-large" style={{ width: '200px', height: '80px', fontSize: '1.2rem' }}>RESPONSE</button>
+          <button onClick={handleResponse} className="btn-large" style={{ width: '200px', height: '80px', fontSize: '1.2rem', backgroundColor: '#4CAF50', color: 'white' }}>RESPONSE</button>
         </>
       ) : (
         <div>

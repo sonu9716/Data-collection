@@ -14,7 +14,7 @@ const SURVEY_ITEMS = {
     { id: 5, text: 'Do you have any diagnosed attention disorders?', type: 'select', options: ['No', 'Yes', 'Prefer not to say'] },
     { id: 6, text: 'How would you rate your overall health?', type: 'select', options: ['Poor', 'Fair', 'Good', 'Excellent'] },
     { id: 7, text: 'How many cups of coffee/energy drinks do you consume daily?', type: 'number' },
-    { id: 8, text: 'Do you have any dietary restrictions?', type: 'text' },
+    { id: 8, text: 'Do you have any dietary restrictions?', type: 'select', options: ['Yes', 'No'] },
     { id: 9, text: 'How much do you exercise per week (hours)?', type: 'number' },
     { id: 10, text: 'What is your major/field of study?', type: 'text' },
     { id: 11, text: 'How many years have you been using social media?', type: 'number' }
