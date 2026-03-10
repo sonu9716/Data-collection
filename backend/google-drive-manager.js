@@ -24,19 +24,47 @@ async function authenticate() {
         try {
             credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON);
         } catch (e) {
-            throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY_JSON is not valid JSON');
+            console.warn('GOOGLE_SERVICE_ACCOUNT_KEY_JSON is not valid JSON, trying file fallback...');
+            // Fall through to file-based detection below
         }
-    } else if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH) {
+    }
+
+    if (!credentials && process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH) {
         // Local dev: key is stored in a file
         const resolvedPath = path.resolve(process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH);
-        if (!fs.existsSync(resolvedPath)) {
-            throw new Error(`Service account key file not found at: ${resolvedPath}`);
+        if (fs.existsSync(resolvedPath)) {
+            credentials = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
         }
-        credentials = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
-    } else {
+    }
+
+    // Auto-detect: scan backend directory for any service account key file
+    if (!credentials) {
+        const backendDir = __dirname;
+        const files = fs.readdirSync(backendDir);
+        const keyFile = files.find(f =>
+            f.endsWith('.json') &&
+            f !== 'package.json' &&
+            f !== 'package-lock.json' &&
+            f !== 'local_data.json'
+        );
+        if (keyFile) {
+            try {
+                const content = JSON.parse(fs.readFileSync(path.join(backendDir, keyFile), 'utf8'));
+                if (content.type === 'service_account' && content.private_key) {
+                    credentials = content;
+                    console.log(`Auto-detected service account key file: ${keyFile}`);
+                }
+            } catch (e) {
+                // Not a valid key file, ignore
+            }
+        }
+    }
+
+    if (!credentials) {
         throw new Error(
-            'Google Drive auth: set either GOOGLE_SERVICE_ACCOUNT_KEY_JSON (Render) ' +
-            'or GOOGLE_SERVICE_ACCOUNT_KEY_PATH (local dev)'
+            'Google Drive auth: no valid service account key found. ' +
+            'Set GOOGLE_SERVICE_ACCOUNT_KEY_JSON, GOOGLE_SERVICE_ACCOUNT_KEY_PATH, ' +
+            'or place a service account key .json file in the backend directory.'
         );
     }
 
