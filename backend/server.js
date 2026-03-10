@@ -27,6 +27,10 @@ const PORT = process.env.PORT || 5000;
 // MIDDLEWARE
 // ============================================================================
 
+// Trust the first proxy (Render's reverse proxy) so express-rate-limit
+// can read the real client IP from the X-Forwarded-For header.
+app.set('trust proxy', 1);
+
 app.use(helmet());
 app.use(cors({
   origin: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:5001'],

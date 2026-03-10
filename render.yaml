@@ -20,7 +20,7 @@ services:
       - key: GOOGLE_SERVICE_ACCOUNT_KEY_JSON
         sync: false
       - key: GOOGLE_DRIVE_ROOT_FOLDER_ID
-        sync: false
+        value: "12V3Gb7rhMGP4XVtwc5wpzIb5zXLk9-y0"
       - key: GOOGLE_DRIVE_ROOT_FOLDER_NAME
         value: DataCollection
       - fromDatabase:
