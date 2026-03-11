@@ -10,13 +10,23 @@ const fs = require('fs');
 const { Readable } = require('stream');
 
 /**
- * Authenticate using a Google Service Account.
- *
- * Two modes (automatically detected):
- *  - LOCAL DEV:  reads key from the file at GOOGLE_SERVICE_ACCOUNT_KEY_PATH
- *  - RENDER/PROD: reads key JSON from GOOGLE_SERVICE_ACCOUNT_KEY_JSON env var
+ * Authenticate using either an OAuth Refresh Token (personal Google Account) 
+ * OR a Google Service Account.
  */
 async function authenticate() {
+    // 1. OAUTH REFRESH TOKEN METHOD 
+    // Recommended because personal Google Accounts have actual Drive storage quota.
+    // Service accounts have a 0 byte storage quota on standard Google Drive accounts.
+    if (process.env.GOOGLE_REFRESH_TOKEN && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+        const oauth2Client = new google.auth.OAuth2(
+            process.env.GOOGLE_CLIENT_ID,
+            process.env.GOOGLE_CLIENT_SECRET
+        );
+        oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+        return google.drive({ version: 'v3', auth: oauth2Client });
+    }
+
+    // 2. SERVICE ACCOUNT METHOD (Fallback)
     let credentials;
 
     if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON) {
@@ -62,9 +72,10 @@ async function authenticate() {
 
     if (!credentials) {
         throw new Error(
-            'Google Drive auth: no valid service account key found. ' +
-            'Set GOOGLE_SERVICE_ACCOUNT_KEY_JSON, GOOGLE_SERVICE_ACCOUNT_KEY_PATH, ' +
-            'or place a service account key .json file in the backend directory.'
+            'Google Drive auth: no valid credentials found.\n' +
+            'Provide EITHER: \n' +
+            '1. GOOGLE_REFRESH_TOKEN, GOOGLE_CLIENT_ID, and GOOGLE_CLIENT_SECRET\n' +
+            '2. GOOGLE_SERVICE_ACCOUNT_KEY_JSON or GOOGLE_SERVICE_ACCOUNT_KEY_PATH'
         );
     }
 
@@ -73,8 +84,7 @@ async function authenticate() {
         scopes: ['https://www.googleapis.com/auth/drive'],
     });
 
-    const drive = google.drive({ version: 'v3', auth });
-    return drive;
+    return google.drive({ version: 'v3', auth });
 }
 
 /**
