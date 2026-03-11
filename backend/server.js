@@ -390,9 +390,13 @@ app.post('/api/auth/google', async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: 'Token required' });
 
+    // Allow BOTH the new backend Client ID and the original frontend Client ID
     const ticket = await googleClient.verifyIdToken({
       idToken: token,
-      audience: process.env.GOOGLE_CLIENT_ID,
+      audience: [
+        process.env.GOOGLE_CLIENT_ID,
+        '1090740879589-2iim3doqe1ck17l9gm77otmiakvj8vcs.apps.googleusercontent.com'
+      ],
     });
     const payload = ticket.getPayload();
     const { email, sub: googleId, name, picture } = payload;
