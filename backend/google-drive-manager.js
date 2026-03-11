@@ -96,6 +96,8 @@ async function ensureFolder(drive, folderName, parentId = null) {
         q: query,
         fields: 'files(id, name)',
         spaces: 'drive',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
     });
 
     if (res.data.files.length > 0) {
@@ -112,6 +114,7 @@ async function ensureFolder(drive, folderName, parentId = null) {
     const folder = await drive.files.create({
         resource: fileMetadata,
         fields: 'id',
+        supportsAllDrives: true,
     });
 
     return folder.data.id;
@@ -151,6 +154,7 @@ async function uploadFile(drive, { name, mimeType, buffer, folderId }) {
         resource: fileMetadata,
         media,
         fields: 'id, webViewLink, webContentLink',
+        supportsAllDrives: true,
     });
 
     return {
@@ -170,6 +174,7 @@ async function makePublic(drive, fileId) {
             role: 'reader',
             type: 'anyone',
         },
+        supportsAllDrives: true,
     });
 }
 
