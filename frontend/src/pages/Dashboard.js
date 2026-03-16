@@ -47,15 +47,18 @@ function Dashboard({ user, api, onLogout }) {
       videoRecorderRef.current.startRecording();
       setSessionStarted(true);
     }
+  }, [sessionStarted]);
 
-    // CLEANUP: Stop recording if user leaves the component (unexpectedly)
+  // CLEANUP: Stop recording if user leaves the component (unmount)
+  React.useEffect(() => {
     return () => {
+      // Only stop if we actually started and haven't completed the session normally
       if (videoRecorderRef.current) {
         console.log('Dashboard unmounting - ensuring recording stops.');
         videoRecorderRef.current.stopRecording();
       }
     };
-  }, [sessionStarted]);
+  }, []); // Empty array ensures this ONLY runs on unmount
 
   // Check for full completion
   React.useEffect(() => {
