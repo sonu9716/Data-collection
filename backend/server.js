@@ -395,10 +395,39 @@ app.get('/api/auth/debug', (req, res) => {
   });
 });
 
+app.get('/api/auth/debug-drive', async (req, res) => {
+  try {
+    const googleDrive = require('./google-drive-manager');
+    const drive = await googleDrive.authenticate();
+    
+    const rootName = process.env.GOOGLE_DRIVE_ROOT_FOLDER_NAME || 'DataCollection';
+    const rootId = await googleDrive.ensureFolder(drive, rootName);
+    
+    res.json({
+      status: 'authenticated',
+      root_folder_name: rootName,
+      root_folder_id: rootId,
+      refresh_token_exists: !!process.env.GOOGLE_REFRESH_TOKEN,
+      client_id_exists: !!process.env.GOOGLE_DRIVE_CLIENT_ID,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'failed',
+      error: error.message,
+      data: error.response?.data,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 app.post('/api/auth/google', async (req, res) => {
   try {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: 'Token required' });
+
+    console.log('[DEBUG] Google Auth Request Headers:', req.headers);
+    console.log('[DEBUG] Token Length:', token.length);
 
     const currentClientId = process.env.GOOGLE_CLIENT_ID;
     logger.info(`Attempting Google Auth. Backend Client ID starts with: ${currentClientId ? currentClientId.slice(0, 10) : 'MISSING'}`);
@@ -646,8 +675,11 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
         storageType = 'google-drive';
         logger.info(`Video uploaded to Google Drive for user ${userId}: ${driveResult.fileId}`);
       } catch (driveErr) {
-        logger.error('Google Drive upload failed, falling back to local:', driveErr.message);
-        isDriveEnabled && logger.warn('Tip: check GOOGLE_SERVICE_ACCOUNT_KEY_PATH and Drive API access.');
+        logger.error('Google Drive upload failed, falling back to local:', {
+          message: driveErr.message,
+          data: driveErr.response?.data
+        });
+        isDriveEnabled && logger.warn('Tip: check GOOGLE_DRIVE_REFRESH_TOKEN and Drive API access.');
         // Fall through to local storage
         const fs = require('fs');
         const path = require('path');
@@ -846,7 +878,10 @@ app.post('/api/tests/submit', authenticateToken, async (req, res) => {
     if (process.env.GOOGLE_DRIVE_ENABLED === 'true') {
       const filename = `test_${test_type}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}.json`;
       googleDrive.uploadUserData(req.body, filename, userId, 'tests')
-        .catch(err => logger.error('Failed to upload test results to Google Drive:', err));
+        .catch(err => logger.error('Failed to upload test results to Google Drive:', {
+          message: err.message,
+          data: err.response?.data
+        }));
     }
 
     res.status(201).json({
@@ -953,7 +988,10 @@ app.get('/api/admin/export/:dataType', authenticateToken, async (req, res) => {
         driveInfo = await googleDrive.uploadExport(jsonContent, filename);
         logger.info(`Export uploaded to Google Drive: ${filename} -> ${driveInfo.fileId}`);
       } catch (driveErr) {
-        logger.error('Failed to upload export to Google Drive:', driveErr.message);
+        logger.error('Failed to upload export to Google Drive:', {
+          message: driveErr.message,
+          data: driveErr.response?.data
+        });
         // Non-fatal: still return the download as normal
       }
     }

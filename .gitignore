@@ -32,3 +32,16 @@ backend/uploads/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Temporary credential/token files
+*.txt
+backend/*.txt
+frontend/*.txt
+RENDER_ENV_VARIABLES.txt
+*.json
+!package.json
+!package-lock.json
+!manifest.json
+!backend/datacollectionplatform-*.json
+local_data.json
+backend/local_data.json

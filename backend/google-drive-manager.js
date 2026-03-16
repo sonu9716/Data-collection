@@ -103,42 +103,47 @@ async function authenticate() {
  * Returns the folder's Drive ID.
  */
 async function ensureFolder(drive, folderName, parentId = null) {
-    // Search for existing folder
-    const query = [
-        `name = '${folderName}'`,
-        `mimeType = 'application/vnd.google-apps.folder'`,
-        `trashed = false`,
-        parentId ? `'${parentId}' in parents` : null,
-    ]
-        .filter(Boolean)
-        .join(' and ');
+    try {
+        // Search for existing folder
+        const query = [
+            `name = '${folderName}'`,
+            `mimeType = 'application/vnd.google-apps.folder'`,
+            `trashed = false`,
+            parentId ? `'${parentId}' in parents` : null,
+        ]
+            .filter(Boolean)
+            .join(' and ');
 
-    const res = await drive.files.list({
-        q: query,
-        fields: 'files(id, name)',
-        spaces: 'drive',
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-    });
+        const res = await drive.files.list({
+            q: query,
+            fields: 'files(id, name)',
+            spaces: 'drive',
+            supportsAllDrives: true,
+            includeItemsFromAllDrives: true,
+        });
 
-    if (res.data.files.length > 0) {
-        return res.data.files[0].id;
+        if (res.data.files && res.data.files.length > 0) {
+            return res.data.files[0].id;
+        }
+
+        // Create folder if it doesn't exist
+        const fileMetadata = {
+            name: folderName,
+            mimeType: 'application/vnd.google-apps.folder',
+            ...(parentId ? { parents: [parentId] } : {}),
+        };
+
+        const folder = await drive.files.create({
+            resource: fileMetadata,
+            fields: 'id',
+            supportsAllDrives: true,
+        });
+
+        return folder.data.id;
+    } catch (error) {
+        console.error(`[Drive] Error in ensureFolder for "${folderName}":`, error.message, error.response?.data || error);
+        throw error;
     }
-
-    // Create folder if it doesn't exist
-    const fileMetadata = {
-        name: folderName,
-        mimeType: 'application/vnd.google-apps.folder',
-        ...(parentId ? { parents: [parentId] } : {}),
-    };
-
-    const folder = await drive.files.create({
-        resource: fileMetadata,
-        fields: 'id',
-        supportsAllDrives: true,
-    });
-
-    return folder.data.id;
 }
 
 /**
@@ -159,30 +164,35 @@ async function getRootFolderId(drive) {
  * Returns { fileId, driveUrl }
  */
 async function uploadFile(drive, { name, mimeType, buffer, folderId }) {
-    const stream = Readable.from(buffer);
+    try {
+        const stream = Readable.from(buffer);
 
-    const fileMetadata = {
-        name,
-        parents: folderId ? [folderId] : [],
-    };
+        const fileMetadata = {
+            name,
+            parents: folderId ? [folderId] : [],
+        };
 
-    const media = {
-        mimeType,
-        body: stream,
-    };
+        const media = {
+            mimeType,
+            body: stream,
+        };
 
-    const file = await drive.files.create({
-        resource: fileMetadata,
-        media,
-        fields: 'id, webViewLink, webContentLink',
-        supportsAllDrives: true,
-    });
+        const file = await drive.files.create({
+            resource: fileMetadata,
+            media,
+            fields: 'id, webViewLink, webContentLink',
+            supportsAllDrives: true,
+        });
 
-    return {
-        fileId: file.data.id,
-        driveUrl: file.data.webViewLink,
-        downloadUrl: file.data.webContentLink,
-    };
+        return {
+            fileId: file.data.id,
+            driveUrl: file.data.webViewLink,
+            downloadUrl: file.data.webContentLink,
+        };
+    } catch (error) {
+        console.error(`[Drive] Error in uploadFile for "${name}":`, error.message, error.response?.data || error);
+        throw error;
+    }
 }
 
 /**

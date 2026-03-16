@@ -79,13 +79,16 @@ function App() {
   const handleGoogleLogin = async (credential) => {
     try {
       setError(null);
+      console.log('Attempting Google Login with backend:', API_BASE_URL);
       const response = await api.post('/auth/google', { token: credential });
       localStorage.setItem('access_token', response.data.access_token);
       setUser(response.data.user);
       setIsAuthenticated(true);
       return true;
     } catch (err) {
-      setError(err.response?.data?.error || 'Google Login failed');
+      console.error('Google Login Full Error:', err);
+      const errorMessage = err.response?.data?.error || err.message || 'Google Login failed';
+      setError(errorMessage);
       return false;
     }
   };
