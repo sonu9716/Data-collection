@@ -163,9 +163,9 @@ async function getRootFolderId(drive) {
  * Upload a Buffer to Google Drive inside the specified folder.
  * Returns { fileId, driveUrl }
  */
-async function uploadFile(drive, { name, mimeType, buffer, folderId }) {
+async function uploadFile(drive, { name, mimeType, buffer, stream, folderId }) {
     try {
-        const stream = Readable.from(buffer);
+        const body = stream || Readable.from(buffer);
 
         const fileMetadata = {
             name,
@@ -174,7 +174,7 @@ async function uploadFile(drive, { name, mimeType, buffer, folderId }) {
 
         const media = {
             mimeType,
-            body: stream,
+            body: body,
         };
 
         const file = await drive.files.create({
@@ -210,25 +210,28 @@ async function makePublic(drive, fileId) {
 }
 
 /**
- * High-level helper: upload a video Buffer to Drive.
+ * High-level helper: upload a video (Buffer or Stream) to Drive.
  * Folder structure: <ROOT> / videos / participant-<userId> / <filename>
  *
- * @param {Buffer} buffer  - Video file buffer
+ * @param {Buffer|Stream} bufferOrStream  - Video data
  * @param {string} filename - e.g. "cognitive_test_20250228T123456.mp4"
  * @param {number|string} userId - Participant user ID
  * @returns {{ fileId, driveUrl, downloadUrl }}
  */
-async function uploadVideo(buffer, filename, userId) {
+async function uploadVideo(bufferOrStream, filename, userId) {
     const drive = await authenticate();
 
     const rootId = await getRootFolderId(drive);
     const videosId = await ensureFolder(drive, 'videos', rootId);
     const userFolderId = await ensureFolder(drive, `participant-${userId}`, videosId);
 
+    const isStream = typeof bufferOrStream.pipe === 'function';
+
     const result = await uploadFile(drive, {
         name: filename,
         mimeType: 'video/mp4',
-        buffer,
+        buffer: isStream ? null : bufferOrStream,
+        stream: isStream ? bufferOrStream : null,
         folderId: userFolderId,
     });
 

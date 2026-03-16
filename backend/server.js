@@ -144,7 +144,18 @@ const s3BucketName = process.env.S3_BUCKET_NAME || 'data-collection-bucket';
 // FILE UPLOAD
 // ============================================================================
 
-const storage = multer.memoryStorage();
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const fs = require('fs');
+    const dir = '/tmp/uploads';
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + '-' + file.originalname);
+  }
+});
+
 const upload = multer({
   storage: storage,
   limits: { fileSize: 500 * 1024 * 1024 },
@@ -666,9 +677,10 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
 
     if (isDriveEnabled) {
       // ── Google Drive upload ──────────────────────────────────────────────
+      const fs = require('fs');
       try {
         const driveResult = await googleDrive.uploadVideo(
-          req.file.buffer,
+          fs.createReadStream(req.file.path),
           filename,
           userId
         );
@@ -682,21 +694,22 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
           data: driveErr.response?.data
         });
         isDriveEnabled && logger.warn('Tip: check GOOGLE_DRIVE_REFRESH_TOKEN and Drive API access.');
-        // Fall through to local storage
-        const fs = require('fs');
+        // Move file to permanent local storage
         const path = require('path');
         const uploadsDir = path.join(__dirname, 'uploads', 'videos');
         if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-        fs.writeFileSync(path.join(uploadsDir, filename), req.file.buffer);
+        const finalPath = path.join(uploadsDir, filename);
+        fs.renameSync(req.file.path, finalPath);
         videoUrl = `/uploads/videos/${filename}`;
         storageType = 'local';
       }
     } else if (isAwsConfigured) {
       // ── AWS S3 upload ────────────────────────────────────────────────────
+      const fs = require('fs');
       const params = {
         Bucket: s3BucketName,
         Key: s3Key,
-        Body: req.file.buffer,
+        Body: fs.createReadStream(req.file.path),
         ContentType: req.file.mimetype,
         ServerSideEncryption: 'AES256'
       };
@@ -710,10 +723,18 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
       const uploadsDir = path.join(__dirname, 'uploads', 'videos');
       if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
       const localFilePath = path.join(uploadsDir, filename);
-      fs.writeFileSync(localFilePath, req.file.buffer);
+      fs.renameSync(req.file.path, localFilePath);
       videoUrl = `/uploads/videos/${filename}`;
       storageType = 'local';
       logger.warn('AWS S3 and Google Drive not configured. Saved video locally.');
+    }
+
+    // CLEANUP: Delete the temp file if it still exists (i.e. if it was uploaded to Drive/S3)
+    const fs = require('fs');
+    if (fs.existsSync(req.file.path)) {
+      fs.unlink(req.file.path, (err) => {
+        if (err) logger.error('Failed to delete temp video file:', err);
+      });
     }
 
     const result = await pool.query(
