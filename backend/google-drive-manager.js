@@ -9,6 +9,8 @@ const path = require('path');
 const fs = require('fs');
 const { Readable } = require('stream');
 
+// ============================================================================
+
 /**
  * Authenticate using either an OAuth Refresh Token (personal Google Account) 
  * OR a Google Service Account.
@@ -17,11 +19,19 @@ async function authenticate() {
     // 1. OAUTH REFRESH TOKEN METHOD 
     // Recommended because personal Google Accounts have actual Drive storage quota.
     // Service accounts have a 0 byte storage quota on standard Google Drive accounts.
-    if (process.env.GOOGLE_REFRESH_TOKEN && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-        const oauth2Client = new google.auth.OAuth2(
-            process.env.GOOGLE_CLIENT_ID,
-            process.env.GOOGLE_CLIENT_SECRET
-        );
+    //
+    // Supports two separate OAuth clients:
+    //   - GOOGLE_DRIVE_CLIENT_ID / GOOGLE_DRIVE_CLIENT_SECRET: Desktop app client
+    //     used specifically for Drive (matches the client used to generate GOOGLE_REFRESH_TOKEN)
+    //   - GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET: Web app client used for user login
+    //     (can also be used for Drive if both clients are the same)
+    const driveClientId     = process.env.GOOGLE_DRIVE_CLIENT_ID     || process.env.GOOGLE_CLIENT_ID;
+    const driveClientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+
+    if (process.env.GOOGLE_REFRESH_TOKEN && driveClientId && driveClientSecret) {
+        console.log('[Drive] Authenticating with OAuth Refresh Token...');
+        console.log(`[Drive] Client ID: ${driveClientId.substring(0, 15)}...`);
+        const oauth2Client = new google.auth.OAuth2(driveClientId, driveClientSecret);
         oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
         return google.drive({ version: 'v3', auth: oauth2Client });
     }
@@ -79,6 +89,7 @@ async function authenticate() {
         );
     }
 
+    console.log('[Drive] Authenticating with Service Account...');
     const auth = new google.auth.GoogleAuth({
         credentials,
         scopes: ['https://www.googleapis.com/auth/drive'],
@@ -212,6 +223,7 @@ async function uploadVideo(buffer, filename, userId) {
     });
 
     await makePublic(drive, result.fileId);
+
     return result;
 }
 
@@ -239,6 +251,10 @@ async function uploadExport(jsonContent, filename) {
     });
 
     await makePublic(drive, result.fileId);
+
+    // Note: User requested ownership transfer only for media/videos.
+    // Exports stay on the uploader account.
+
     return result;
 }
 
@@ -270,6 +286,10 @@ async function uploadUserData(data, filename, userId, category) {
     });
 
     await makePublic(drive, result.fileId);
+
+    // Note: User requested ownership transfer only for media/videos.
+    // User data (surveys/tests) stay on the uploader account.
+
     return result;
 }
 

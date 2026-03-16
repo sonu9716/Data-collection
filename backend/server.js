@@ -3,9 +3,11 @@
 // Complete Express.js server with all routes
 // ============================================================================
 
+const dotenv = require('dotenv');
+dotenv.config();
+
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
@@ -17,8 +19,6 @@ const rateLimit = require('express-rate-limit');
 const googleDrive = require('./google-drive-manager');
 const { OAuth2Client } = require('google-auth-library');
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -385,22 +385,40 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.get('/api/auth/debug', (req, res) => {
+  res.json({
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ? (process.env.GOOGLE_CLIENT_ID.slice(0, 10) + '...') : 'MISSING',
+    GOOGLE_DRIVE_CLIENT_ID: process.env.GOOGLE_DRIVE_CLIENT_ID ? (process.env.GOOGLE_DRIVE_CLIENT_ID.slice(0, 10) + '...') : 'MISSING',
+    NODE_ENV: process.env.NODE_ENV,
+    CORS_ORIGINS: process.env.CORS_ORIGINS,
+    TIMESTAMP: new Date().toISOString()
+  });
+});
+
 app.post('/api/auth/google', async (req, res) => {
   try {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: 'Token required' });
 
+    const currentClientId = process.env.GOOGLE_CLIENT_ID;
+    logger.info(`Attempting Google Auth. Backend Client ID starts with: ${currentClientId ? currentClientId.slice(0, 10) : 'MISSING'}`);
+
+    // Build audience array, filtering out undefined
+    const audience = [
+      currentClientId,
+      '1090740879589-2iim3doqe1ck17l9gm77otmiakvj8vcs.apps.googleusercontent.com'
+    ].filter(Boolean);
+
     // Allow BOTH the new backend Client ID and the original frontend Client ID
     const ticket = await googleClient.verifyIdToken({
       idToken: token,
-      audience: [
-        process.env.GOOGLE_CLIENT_ID,
-        '1090740879589-2iim3doqe1ck17l9gm77otmiakvj8vcs.apps.googleusercontent.com'
-      ],
+      audience: audience,
     });
     const payload = ticket.getPayload();
-    const { email, sub: googleId, name, picture } = payload;
+    const { email } = payload;
 
+    logger.info(`Google Auth successful for email: ${email}`);
+    
     // Check if user exists
     let result = await pool.query(
       'SELECT id, email, age, gender, institution FROM users WHERE email = $1',
@@ -410,7 +428,6 @@ app.post('/api/auth/google', async (req, res) => {
     let user;
     if (result.rows.length === 0) {
       // Create new user for Google login if not exists
-      // Note: password_hash is set to a random string since they login via Google
       const randomPass = require('crypto').randomBytes(16).toString('hex');
       const hashedPassword = await bcrypt.hash(randomPass, 10);
       const insertResult = await pool.query(
@@ -437,8 +454,11 @@ app.post('/api/auth/google', async (req, res) => {
       user: user
     });
   } catch (error) {
-    logger.error('Google login error:', error);
-    res.status(500).json({ error: 'Google authentication failed' });
+    logger.error('Google login error detail:', {
+      message: error.message,
+      client_id_missing: !process.env.GOOGLE_CLIENT_ID
+    });
+    res.status(500).json({ error: `Google authentication failed: ${error.message}` });
   }
 });
 

@@ -40,6 +40,11 @@ class LocalDB {
         await new Promise(resolve => setTimeout(resolve, 50));
 
         try {
+            // 0. INITIALIZATION NOISE (Silently handle schema queries)
+            if (sql.startsWith('create table') || sql.startsWith('create index') || sql === 'select now()') {
+                return { rows: [sql === 'select now()' ? { now: new Date().toISOString() } : {}] };
+            }
+
             // 1. REGISTER: INSERT INTO users
             if (sql.startsWith('insert into users')) {
                 const newUser = {
