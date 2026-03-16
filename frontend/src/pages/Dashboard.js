@@ -41,13 +41,15 @@ function Dashboard({ user, api, onLogout }) {
   }, []);
 
   // Auto-start recording when Dashboard mounts (Survey starts)
+  // We run this without deps initially until sessionStarted is true to ensure 
+  // we catch the ref when it's ready.
   React.useEffect(() => {
     if (videoRecorderRef.current && !sessionStarted) {
       console.log('Starting continuous recording session...');
       videoRecorderRef.current.startRecording();
       setSessionStarted(true);
     }
-  }, [sessionStarted]);
+  }); // Run on every render until sessionStarted is true
 
   // CLEANUP: Stop recording if user leaves the component (unmount)
   React.useEffect(() => {

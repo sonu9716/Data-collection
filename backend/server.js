@@ -591,8 +591,10 @@ app.post('/api/survey/submit', authenticateToken, async (req, res) => {
     // Upload to Google Drive if enabled
     if (process.env.GOOGLE_DRIVE_ENABLED === 'true') {
       const filename = `survey_${assessment_type}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}.json`;
+      console.log(`[Drive] Triggering survey upload for user ${userId}: ${filename}`);
       googleDrive.uploadUserData(req.body, filename, userId, 'surveys')
-        .catch(err => logger.error('Failed to upload survey to Google Drive:', err));
+        .then(res => console.log(`[Drive] Survey uploaded successfully: ${res.fileId}`))
+        .catch(err => console.error('[Drive] Failed to upload survey to Google Drive:', err));
     }
 
     res.status(201).json({
