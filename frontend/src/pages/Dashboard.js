@@ -156,19 +156,21 @@ function Dashboard({ user, api, onLogout }) {
 
       <button
         className={`tab ${activeTab === 'survey' ? 'active' : ''}`}
-        style={{ cursor: 'default', pointerEvents: 'none' }}
+        onClick={() => setActiveTab('survey')}
       >
         📋 Survey {surveyCompleted && '✓'}
       </button>
       <button
         className={`tab ${activeTab === 'tests' ? 'active' : ''}`}
-        style={{ cursor: 'default', pointerEvents: 'none' }}
+        onClick={() => surveyCompleted && setActiveTab('tests')}
+        disabled={!surveyCompleted}
       >
         🧠 Cognitive Tests {testsCompleted && '✓'}
       </button>
       <button
         className={`tab ${activeTab === 'typing' ? 'active' : ''}`}
-        style={{ cursor: 'default', pointerEvents: 'none' }}
+        onClick={() => testsCompleted && setActiveTab('typing')}
+        disabled={!testsCompleted}
       >
         ⌨️ Typing Task {typingCompleted && '✓'}
       </button>
@@ -182,9 +184,8 @@ function Dashboard({ user, api, onLogout }) {
             api={api}
             onComplete={() => {
               setSurveyCompleted(true);
-              setActiveTab('tests'); // Auto-advance
               window.scrollTo(0, 0);
-              alert('Survey Completed! Moving to Cognitive Tests.');
+              alert('Survey Completed! You can now proceed to the next section when ready.');
             }}
           />
         )}
@@ -195,9 +196,8 @@ function Dashboard({ user, api, onLogout }) {
             api={api}
             onComplete={() => {
               setTestsCompleted(true);
-              setActiveTab('typing'); // Auto-advance to new test
               window.scrollTo(0, 0);
-              alert('Cognitive Tests Completed! Moving to Final Task.');
+              alert('Cognitive Tests Completed! You can now proceed to the final task when ready.');
             }}
           />
         )}
@@ -209,6 +209,19 @@ function Dashboard({ user, api, onLogout }) {
             onComplete={handleTypingComplete}
           />
         )}
+
+        <div className="manual-progression" style={{ marginTop: '20px', textAlign: 'center' }}>
+          {activeTab === 'survey' && surveyCompleted && (
+            <button onClick={() => setActiveTab('tests')} className="btn-primary">
+              Start Cognitive Tests →
+            </button>
+          )}
+          {activeTab === 'tests' && testsCompleted && (
+            <button onClick={() => setActiveTab('typing')} className="btn-primary">
+              Start Typing Task →
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="progress-indicator">
