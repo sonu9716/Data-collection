@@ -11,7 +11,6 @@ function TypingFrustrationTest({ user, api, onComplete }) {
     const [timeLeft, setTimeLeft] = useState(60); // 60 seconds strict
     const [isTestActive, setIsTestActive] = useState(true);
     const [feedback, setFeedback] = useState(''); 
-    const [finalResults, setFinalResults] = useState(null);
 
     const inputRef = useRef(null);
 
@@ -100,8 +99,8 @@ function TypingFrustrationTest({ user, api, onComplete }) {
         }
         const accuracy = input.length > 0 ? (correctChars / input.length) * 100 : 0;
 
-        // Store results for final manual submission
-        setFinalResults({
+        // Auto-submit as requested by user
+        onComplete({
             test_type: 'typing_frustration',
             raw_score: accuracy,
             performance_data: {
@@ -113,12 +112,6 @@ function TypingFrustrationTest({ user, api, onComplete }) {
                 match_accuracy: accuracy.toFixed(1)
             }
         });
-    };
-
-    const handleFinalSubmit = () => {
-        if (finalResults) {
-            onComplete(finalResults);
-        }
     };
 
     return (
@@ -212,27 +205,13 @@ function TypingFrustrationTest({ user, api, onComplete }) {
             {!isTestActive && (
                 <div className="test-completion-overlay" style={{
                     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(255,255,255,0.95)', display: 'flex',
+                    background: 'rgba(255,255,255,0.9)', display: 'flex',
                     flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    zIndex: 10, borderRadius: '8px', border: '2px solid #28a745'
+                    zIndex: 10, borderRadius: '8px'
                 }}>
-                    <h3>{timeLeft === 0 ? "⏱️ Time's Up!" : "✅ Task Finished"}</h3>
-                    <p>Your typing results have been captured.</p>
-                    <div style={{ margin: '15px 0', textAlign: 'left', background: '#f8f9fa', padding: '15px', borderRadius: '5px' }}>
-                        <div><strong>WPM:</strong> {finalResults?.performance_data.wpm}</div>
-                        <div><strong>Accuracy:</strong> {finalResults?.performance_data.match_accuracy}%</div>
-                        <div><strong>Errors:</strong> {finalResults?.performance_data.error_count}</div>
-                    </div>
-                    <button 
-                        onClick={handleFinalSubmit} 
-                        className="btn-primary"
-                        style={{ padding: '12px 30px', fontSize: '1.1rem' }}
-                    >
-                        Finish Session & Submit Data →
-                    </button>
-                    <p style={{ marginTop: '10px', fontSize: '0.8rem', color: '#6c757d' }}>
-                        Click the button above to securely upload your session recording and data.
-                    </p>
+                    <h3>Data Saved</h3>
+                    <div className="spinner-small" style={{ margin: '10px' }}></div>
+                    <p>Submitting session results...</p>
                 </div>
             )}
         </div>
