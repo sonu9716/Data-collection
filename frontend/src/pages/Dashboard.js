@@ -83,7 +83,12 @@ function Dashboard({ user, api, onLogout }) {
   const onVideoUploadComplete = () => {
     setUploading(false);
     setUploadError(null);
-    alert('Congratulations! You have completed the entire data collection session. Thank you for your participation.');
+    // ONLY show the success message if we actually reached the final completion state
+    if (sessionComplete) {
+      alert('Congratulations! You have completed the entire data collection session. Thank you for your participation.');
+    } else {
+      console.log('Video uploaded as part of unmount or early stop - no alert shown.');
+    }
   };
 
   const handleVideoUploadError = (errorMsg) => {

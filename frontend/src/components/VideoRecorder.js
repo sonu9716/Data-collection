@@ -26,7 +26,19 @@ const VideoRecorder = forwardRef(({ user, api, onUploadComplete, onUploadError }
         };
 
         mediaRecorder.onstop = async () => {
+          if (chunks.length < 2) {
+            console.log('Recording too short, skipping upload.');
+            stream.getTracks().forEach(track => track.stop());
+            if (onUploadComplete) onUploadComplete(); // Still notify to clear loading states
+            return;
+          }
           const blob = new Blob(chunks, { type: 'video/mp4' });
+          if (blob.size < 1000) { // Less than 1KB
+            console.log('Video blob too small, likely empty. Skipping upload.');
+            stream.getTracks().forEach(track => track.stop());
+            if (onUploadComplete) onUploadComplete();
+            return;
+          }
           await uploadVideo(blob);
           stream.getTracks().forEach(track => track.stop());
         };
