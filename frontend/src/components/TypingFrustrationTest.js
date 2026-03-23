@@ -11,6 +11,7 @@ function TypingFrustrationTest({ user, api, onComplete }) {
     const [timeLeft, setTimeLeft] = useState(60); // 60 seconds strict
     const [isTestActive, setIsTestActive] = useState(true);
     const [feedback, setFeedback] = useState(''); 
+    const isFinishedRef = useRef(false);
 
     const inputRef = useRef(null);
 
@@ -88,7 +89,8 @@ function TypingFrustrationTest({ user, api, onComplete }) {
     };
 
     const finishTest = (completed) => {
-        if (!isTestActive) return; 
+        if (isFinishedRef.current) return; 
+        isFinishedRef.current = true;
         setIsTestActive(false);
         const duration = (Date.now() - startTime) / 1000;
         const wpm = (input.length / 5) / (duration / 60);
