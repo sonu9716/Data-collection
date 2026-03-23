@@ -47,8 +47,9 @@ class LocalDB {
 
             // 1. REGISTER: INSERT INTO users
             if (sql.startsWith('insert into users')) {
+                const newId = Math.floor(100000 + Math.random() * 900000); // Generate a unique 6-digit ID
                 const newUser = {
-                    id: this.data.users.length + 1,
+                    id: newId,
                     email: params[0],
                     password_hash: params[1],
                     age: params[2],
