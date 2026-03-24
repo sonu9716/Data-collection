@@ -52,12 +52,12 @@ function Dashboard({ user, api, onLogout }) {
   }); // Run on every render until sessionStarted is true
 
   // CLEANUP: Stop recording if user leaves the component (unmount)
+  // Do NOT upload on unmount - only upload when session finishes normally
   React.useEffect(() => {
     return () => {
-      // Only stop if we actually started and haven't completed the session normally
       if (videoRecorderRef.current) {
-        console.log('Dashboard unmounting - ensuring recording stops.');
-        videoRecorderRef.current.stopRecording();
+        console.log('Dashboard unmounting - stopping recording without upload.');
+        videoRecorderRef.current.stopRecording(false); // false = do NOT upload
       }
     };
   }, []); // Empty array ensures this ONLY runs on unmount
@@ -75,7 +75,7 @@ function Dashboard({ user, api, onLogout }) {
     console.log('Session complete! Stopping recording...');
 
     if (videoRecorderRef.current) {
-      await videoRecorderRef.current.stopRecording();
+      await videoRecorderRef.current.stopRecording(true); // true = upload the video
       // The VideoRecorder component handles the upload and calls onUploadComplete
     }
   };
@@ -103,7 +103,7 @@ function Dashboard({ user, api, onLogout }) {
       /* We use async stop if possible, but even fire-and-forget is better than nothing. 
          However, VideoRecorder.stopRecording isn't async in the current impl, 
          but accessing the ref is safe. */
-      videoRecorderRef.current.stopRecording();
+      videoRecorderRef.current.stopRecording(false); // Don't upload on logout
     }
 
     onLogout();

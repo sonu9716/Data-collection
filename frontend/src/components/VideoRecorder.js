@@ -3,6 +3,7 @@ import React, { useState, useRef, useImperativeHandle, forwardRef } from 'react'
 const VideoRecorder = forwardRef(({ user, api, onUploadComplete, onUploadError }, ref) => {
   const videoRef = useRef(null);
   const mediaRecorderRef = useRef(null);
+  const shouldUploadRef = useRef(false);
   const [isRecording, setIsRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
@@ -26,6 +27,13 @@ const VideoRecorder = forwardRef(({ user, api, onUploadComplete, onUploadError }
         };
 
         mediaRecorder.onstop = async () => {
+          // Only upload if explicitly told to (session completed normally)
+          if (!shouldUploadRef.current) {
+            console.log('Recording stopped without upload flag - discarding.');
+            stream.getTracks().forEach(track => track.stop());
+            if (onUploadComplete) onUploadComplete();
+            return;
+          }
           if (chunks.length < 2) {
             console.log('Recording too short, skipping upload.');
             stream.getTracks().forEach(track => track.stop());
@@ -52,11 +60,12 @@ const VideoRecorder = forwardRef(({ user, api, onUploadComplete, onUploadError }
         console.error(err);
       }
     },
-    stopRecording: () => {
+    stopRecording: (shouldUpload = false) => {
+      shouldUploadRef.current = shouldUpload;
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
         setIsRecording(false);
-        console.log('Video recording stopped');
+        console.log(`Video recording stopped (upload: ${shouldUpload})`);
       }
     }
   }));
