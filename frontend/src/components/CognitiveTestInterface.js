@@ -3,7 +3,7 @@
 // 5 Cognitive Tests
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 
 const TEST_TYPES = {
   sart: {
@@ -39,6 +39,7 @@ function CognitiveTestInterface({ user, api, onComplete }) {
   const [testData, setTestData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [completedTests, setCompletedTests] = useState([]);
+  const submittingRef = useRef(false); // Lock to prevent duplicate submissions
 
   const startTest = (testType) => {
     if (completedTests.includes(testType)) {
@@ -60,6 +61,18 @@ function CognitiveTestInterface({ user, api, onComplete }) {
   };
 
   const completeTest = async (finalResults) => {
+    // GUARD: Prevent duplicate submissions
+    if (submittingRef.current) {
+      console.log('Submission already in progress, ignoring duplicate.');
+      return;
+    }
+    // GUARD: Prevent re-submitting an already completed test
+    if (completedTests.includes(testData.test_type)) {
+      console.log(`Test ${testData.test_type} already completed, ignoring.`);
+      return;
+    }
+    submittingRef.current = true;
+
     // NOTE: finalResults param allows tests to pass specific data back
     const resultsToSubmit = finalResults || {
       test_type: testData.test_type,
@@ -95,8 +108,9 @@ function CognitiveTestInterface({ user, api, onComplete }) {
       setSelectedTest(null);
       setTestData(null);
 
-      // Check if all 5 tests are done
-      if (newCompleted.length === 5) { // 5 tests total
+      // Check if all 5 UNIQUE tests are done
+      const uniqueCompleted = new Set(newCompleted);
+      if (uniqueCompleted.size === 5) { // 5 unique tests total
         if (onComplete) onComplete();
       }
 
@@ -104,6 +118,7 @@ function CognitiveTestInterface({ user, api, onComplete }) {
       alert('Failed to submit test results: ' + error.message);
     } finally {
       setLoading(false);
+      submittingRef.current = false; // Release lock
     }
   };
 
@@ -172,6 +187,7 @@ function SARTTest({ testData, setTestData, onFinish }) {
   const [trials, setTrials] = useState(0);
   const MAX_TRIALS = 30;
   const [gameOver, setGameOver] = useState(false);
+  const finishedRef = useRef(false);
 
   // Detailed Stats
   const [stats, setStats] = useState({
@@ -233,6 +249,8 @@ function SARTTest({ testData, setTestData, onFinish }) {
   };
 
   const handleComplete = () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
     const totalCorrect = stats.correctGo + stats.correctNoGo;
     const accuracy = (totalCorrect / MAX_TRIALS) * 100;
 
@@ -273,7 +291,7 @@ function SARTTest({ testData, setTestData, onFinish }) {
             <li>Missed Clicks (Errors): {stats.omissionErrors}</li>
           </div>
           <br />
-          <button onClick={handleComplete} className="btn-primary">Finish Test</button>
+          <button onClick={handleComplete} className="btn-primary" disabled={finishedRef.current}>Finish Test</button>
         </div>
       )}
     </div>
@@ -286,6 +304,7 @@ function DigitSpanTest({ testData, setTestData, onFinish }) {
   const [level, setLevel] = useState(3); // Start with 3 digits
   const [phase, setPhase] = useState('memorize'); // 'memorize', 'input', 'result'
   const [strikes, setStrikes] = useState(0);
+  const finishedRef = useRef(false);
 
   // Generate sequence
   React.useEffect(() => {
@@ -330,6 +349,8 @@ function DigitSpanTest({ testData, setTestData, onFinish }) {
   };
 
   const handleFinish = () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
     onFinish({
       test_type: 'digit_span',
       raw_score: level - 1,
@@ -372,7 +393,7 @@ function DigitSpanTest({ testData, setTestData, onFinish }) {
         <div className="completion-screen">
           <h3>Test Complete!</h3>
           <p>Max Digits Remembered: {level - 1}</p>
-          <button onClick={handleFinish} className="btn-primary">Finish Test</button>
+          <button onClick={handleFinish} className="btn-primary" disabled={finishedRef.current}>Finish Test</button>
         </div>
       )}
     </div>
@@ -386,6 +407,7 @@ function TrailMakingTest({ testData, setTestData, onFinish }) {
   const [completed, setCompleted] = useState(false);
   const [startTime] = useState(Date.now());
   const [elapsed, setElapsed] = useState(0);
+  const finishedRef = useRef(false);
 
   // Timer
   React.useEffect(() => {
@@ -463,6 +485,8 @@ function TrailMakingTest({ testData, setTestData, onFinish }) {
   };
 
   const handleFinish = () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
     onFinish({
       test_type: 'trail_making',
       raw_score: elapsed, // Lower is better
@@ -521,7 +545,7 @@ function TrailMakingTest({ testData, setTestData, onFinish }) {
       {completed && (
         <div style={{ marginTop: '20px' }}>
           <p style={{ color: 'green', fontWeight: 'bold' }}>Done in {elapsed}s!</p>
-          <button onClick={handleFinish} className="btn-primary">Complete Test</button>
+          <button onClick={handleFinish} className="btn-primary" disabled={finishedRef.current}>Complete Test</button>
         </div>
       )}
     </div>
@@ -534,6 +558,7 @@ function GoNoGoTest({ testData, setTestData, onFinish }) {
   const MAX_TRIALS = 30;
   const [gameOver, setGameOver] = useState(false);
   const [message, setMessage] = useState('');
+  const finishedRef = useRef(false);
 
   React.useEffect(() => {
     if (trials >= MAX_TRIALS) {
@@ -608,7 +633,11 @@ function GoNoGoTest({ testData, setTestData, onFinish }) {
       ) : (
         <div>
           <h3>Test Complete!</h3>
-          <button onClick={() => onFinish({ test_type: 'go_no_go', raw_score: testData.score, performance_data: { trials: MAX_TRIALS } })} className="btn-primary">
+          <button onClick={() => {
+            if (finishedRef.current) return;
+            finishedRef.current = true;
+            onFinish({ test_type: 'go_no_go', raw_score: testData.score, performance_data: { trials: MAX_TRIALS } });
+          }} className="btn-primary" disabled={finishedRef.current}>
             Finish Test
           </button>
         </div>
@@ -623,6 +652,7 @@ function StroopTest({ testData, setTestData, onFinish }) {
   const [color, setColor] = React.useState('#FF0000');
   const [trials, setTrials] = React.useState(0);
   const MAX_TRIALS = 20;
+  const finishedRef = useRef(false);
 
   React.useEffect(() => {
     if (trials < MAX_TRIALS) {
@@ -664,14 +694,18 @@ function StroopTest({ testData, setTestData, onFinish }) {
       <div className="test-area">
         <h3>Test Complete!</h3>
         <p>Score: {testData.score}/{MAX_TRIALS}</p>
-        <button onClick={() => onFinish({
+        <button onClick={() => {
+          if (finishedRef.current) return;
+          finishedRef.current = true;
+          onFinish({
           test_type: 'stroop',
           raw_score: testData.score,
           performance_data: {
             trials: MAX_TRIALS,
             accuracy: testData.accuracy || 0
           }
-        })} className="btn-primary">
+        });
+        }} className="btn-primary" disabled={finishedRef.current}>
           Finish Test
         </button>
       </div>
