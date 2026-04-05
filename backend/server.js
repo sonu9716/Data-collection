@@ -27,7 +27,7 @@ const PORT = process.env.PORT || 5000;
 // MIDDLEWARE
 // ============================================================================
 
-// Trust the first proxy (Render's reverse proxy) so express-rate-limit
+// Trust the first proxy (Nginx reverse proxy on AWS) so express-rate-limit
 // can read the real client IP from the X-Forwarded-For header.
 app.set('trust proxy', 1);
 
@@ -39,7 +39,7 @@ app.use(cors({
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100
+  max: 500 // 50 concurrent users (~10 requests each per 15-min window)
 });
 app.use(limiter);
 
@@ -76,14 +76,17 @@ let isLocalDb = false;
 // Try to connect to postgres, otherwise fallback to local DB
 try {
   const { Pool } = require('pg');
+  // AWS Free Tier (t2.micro): keep pool small to save RAM
+  // 5 connections handles 50 concurrent users easily since queries are fast
+  const poolSize = parseInt(process.env.DB_POOL_SIZE) || 5;
   pool = new Pool(
     process.env.DATABASE_URL
       ? {
         connectionString: process.env.DATABASE_URL,
         ssl: { rejectUnauthorized: false },
-        max: 20,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 2000,
+        max: poolSize,
+        idleTimeoutMillis: 10000,
+        connectionTimeoutMillis: 5000,
       }
       : {
         user: process.env.DB_USER || 'postgres',
@@ -91,9 +94,9 @@ try {
         database: process.env.DB_NAME || 'data_collection',
         password: process.env.DB_PASSWORD,
         port: process.env.DB_PORT || 5432,
-        max: 20,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 2000,
+        max: poolSize,
+        idleTimeoutMillis: 10000,
+        connectionTimeoutMillis: 5000,
       }
   );
 
@@ -158,9 +161,9 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 500 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB max (videos are now compressed on frontend)
   fileFilter: (req, file, cb) => {
-    const allowedMimes = ['video/mp4', 'application/json', 'text/csv'];
+    const allowedMimes = ['video/mp4', 'video/webm', 'application/json', 'text/csv'];
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -1088,11 +1091,27 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
   await initializeDatabase();
 
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     logger.info(`Server running on http://localhost:${PORT}`);
     console.log(`✓ Server running on http://localhost:${PORT}`);
     console.log(`✓ API health check: http://localhost:${PORT}/api/health`);
+    console.log(`✓ DB pool size: ${parseInt(process.env.DB_POOL_SIZE) || 5}`);
   });
+
+  // Graceful shutdown for PM2 on AWS
+  const gracefulShutdown = (signal) => {
+    logger.info(`${signal} received. Shutting down gracefully...`);
+    server.close(() => {
+      pool.end().then(() => {
+        logger.info('Database pool closed.');
+        process.exit(0);
+      });
+    });
+    // Force close after 5 seconds
+    setTimeout(() => process.exit(1), 5000);
+  };
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 };
 
 startServer().catch(err => {

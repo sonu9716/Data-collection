@@ -12,12 +12,22 @@ const VideoRecorder = forwardRef(({ user, api, onUploadComplete, onUploadError }
     startRecording: async () => {
       try {
         setError(null);
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15 } },
+          audio: true
+        });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
 
-        const mediaRecorder = new MediaRecorder(stream);
+        // Use low bitrate for smaller file sizes (~60-70% reduction)
+        const recorderOptions = {};
+        if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+          recorderOptions.mimeType = 'video/webm;codecs=vp8';
+        }
+        recorderOptions.videoBitsPerSecond = 500000; // 500kbps (vs default ~2.5Mbps)
+
+        const mediaRecorder = new MediaRecorder(stream, recorderOptions);
         const chunks = [];
 
         mediaRecorder.ondataavailable = (event) => {
@@ -52,7 +62,7 @@ const VideoRecorder = forwardRef(({ user, api, onUploadComplete, onUploadError }
         };
 
         mediaRecorderRef.current = mediaRecorder;
-        mediaRecorder.start();
+        mediaRecorder.start(10000); // Collect data every 10 seconds to reduce memory pressure
         setIsRecording(true);
         console.log('Video recording started');
       } catch (err) {
