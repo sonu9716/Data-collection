@@ -320,7 +320,7 @@ DATABASE_URL=postgresql://postgres:xxxx@dpg-xxxxx.oregon-postgres.render.com:543
 DB_POOL_SIZE=5
 
 # --- Google OAuth (no change needed) ---
-GOOGLE_CLIENT_ID=YOUR_GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_ID=1090740879589-2iim3doqe1ck17l9gm77otmiakvj8vcs.apps.googleusercontent.com
 
 # --- Google Drive (copy from your local backend/.env) ---
 GOOGLE_DRIVE_ENABLED=true

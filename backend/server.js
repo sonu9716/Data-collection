@@ -132,16 +132,20 @@ const dbQuery = async (text, params) => {
 pool.query = dbQuery;
 
 // ============================================================================
-// AWS S3
+// AWS S3 — Primary storage for all collected data
 // ============================================================================
 
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION || 'us-east-1'
-});
+const s3Config = {};
+// If running on EC2 with IAM Role, credentials are auto-detected.
+// If explicit keys are set, use them (local dev or non-IAM setups).
+if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+  s3Config.accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+  s3Config.secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+}
+s3Config.region = process.env.AWS_REGION || 'ap-south-1';
 
-const s3BucketName = process.env.S3_BUCKET_NAME || 'data-collection-bucket';
+const s3 = new AWS.S3(s3Config);
+const s3BucketName = process.env.S3_BUCKET_NAME || 'data-collection-uploads';
 
 // ============================================================================
 // FILE UPLOAD
@@ -602,13 +606,23 @@ app.post('/api/survey/submit', authenticateToken, async (req, res) => {
     const response = result.rows[0];
     logger.info(`Survey submitted for user ${userId}`);
 
-    // Upload to Google Drive if enabled
-    if (process.env.GOOGLE_DRIVE_ENABLED === 'true') {
-      const filename = `survey_${assessment_type}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}.json`;
-      console.log(`[Drive] Triggering survey upload for user ${userId}: ${filename}`);
-      googleDrive.uploadUserData(req.body, filename, userId, 'surveys')
-        .then(res => console.log(`[Drive] Survey uploaded successfully: ${res.fileId}`))
-        .catch(err => console.error('[Drive] Failed to upload survey to Google Drive:', err));
+    // Upload survey data to S3
+    try {
+      const s3Filename = `survey_${assessment_type}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}.json`;
+      const s3Key = `surveys/participant-${userId}/${s3Filename}`;
+      const params = {
+        Bucket: s3BucketName,
+        Key: s3Key,
+        Body: JSON.stringify(req.body, null, 2),
+        ContentType: 'application/json',
+        ServerSideEncryption: 'AES256'
+      };
+      
+      s3.upload(params).promise()
+        .then(() => logger.info(`[S3] Survey uploaded: ${s3Key}`))
+        .catch(err => logger.error('[S3] Failed to upload survey:', err.message));
+    } catch (s3Err) {
+      logger.error('[S3] Survey upload error:', s3Err.message);
     }
 
     res.status(201).json({
@@ -666,49 +680,12 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
     const s3Key = `videos/participant-${userId}/${filename}`;
     const fileSizeMB = req.file.size / (1024 * 1024);
 
-    // Determine storage backend priority:
-    // 1. Google Drive (if GOOGLE_DRIVE_ENABLED=true)
-    // 2. AWS S3 (if AWS credentials are configured)
-    // 3. Local filesystem (fallback)
-    const isDriveEnabled = process.env.GOOGLE_DRIVE_ENABLED === 'true';
-    const isAwsConfigured = process.env.AWS_ACCESS_KEY_ID &&
-      !process.env.AWS_ACCESS_KEY_ID.includes('your-aws-access-key');
-
     let videoUrl = '';
     let storageType = 'local';
-    let driveFileId = null;
 
-    if (isDriveEnabled) {
-      // ── Google Drive upload ──────────────────────────────────────────────
-      const fs = require('fs');
-      try {
-        const driveResult = await googleDrive.uploadVideo(
-          fs.createReadStream(req.file.path),
-          filename,
-          userId
-        );
-        videoUrl = driveResult.driveUrl;
-        driveFileId = driveResult.fileId;
-        storageType = 'google-drive';
-        logger.info(`Video uploaded to Google Drive for user ${userId}: ${driveResult.fileId}`);
-      } catch (driveErr) {
-        logger.error('Google Drive upload failed, falling back to local:', {
-          message: driveErr.message,
-          data: driveErr.response?.data
-        });
-        isDriveEnabled && logger.warn('Tip: check GOOGLE_DRIVE_REFRESH_TOKEN and Drive API access.');
-        // Move file to permanent local storage
-        const path = require('path');
-        const uploadsDir = path.join(__dirname, 'uploads', 'videos');
-        if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-        const finalPath = path.join(uploadsDir, filename);
-        fs.renameSync(req.file.path, finalPath);
-        videoUrl = `/uploads/videos/${filename}`;
-        storageType = 'local';
-      }
-    } else if (isAwsConfigured) {
-      // ── AWS S3 upload ────────────────────────────────────────────────────
-      const fs = require('fs');
+    // ── Upload to S3 (primary) ──────────────────────────────────────────
+    const fs = require('fs');
+    try {
       const params = {
         Bucket: s3BucketName,
         Key: s3Key,
@@ -717,11 +694,12 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
         ServerSideEncryption: 'AES256'
       };
       await s3.upload(params).promise();
-      videoUrl = `https://${s3BucketName}.s3.amazonaws.com/${s3Key}`;
+      videoUrl = `https://${s3BucketName}.s3.${s3Config.region}.amazonaws.com/${s3Key}`;
       storageType = 's3';
-    } else {
-      // ── Local filesystem fallback ─────────────────────────────────────────
-      const fs = require('fs');
+      logger.info(`[S3] Video uploaded: ${s3Key} (${fileSizeMB.toFixed(2)} MB)`);
+    } catch (s3Err) {
+      // ── Fallback to local filesystem ─────────────────────────────────────
+      logger.error('[S3] Video upload failed, saving locally:', s3Err.message);
       const path = require('path');
       const uploadsDir = path.join(__dirname, 'uploads', 'videos');
       if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -729,11 +707,9 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
       fs.renameSync(req.file.path, localFilePath);
       videoUrl = `/uploads/videos/${filename}`;
       storageType = 'local';
-      logger.warn('AWS S3 and Google Drive not configured. Saved video locally.');
     }
 
-    // CLEANUP: Delete the temp file if it still exists (i.e. if it was uploaded to Drive/S3)
-    const fs = require('fs');
+    // CLEANUP: Delete the temp file if it still exists (uploaded to S3)
     if (fs.existsSync(req.file.path)) {
       fs.unlink(req.file.path, (err) => {
         if (err) logger.error('Failed to delete temp video file:', err);
@@ -748,8 +724,8 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
       [
         userId,
         videoType,
-        storageType === 's3' ? s3BucketName : storageType,
-        storageType === 's3' ? s3Key : (driveFileId || videoUrl),
+        storageType === 's3' ? s3BucketName : 'local',
+        s3Key,
         videoUrl,
         fileSizeMB,
         'completed'
@@ -764,7 +740,6 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
       video_id: video.id,
       storage: storageType,
       video_url: videoUrl,
-      drive_file_id: driveFileId,
       file_size_mb: video.file_size_mb
     });
   } catch (error) {
@@ -900,14 +875,23 @@ app.post('/api/tests/submit', authenticateToken, async (req, res) => {
 
     logger.info(`Cognitive test submitted for user ${userId}: ${test_type}`);
 
-    // Upload to Google Drive if enabled
-    if (process.env.GOOGLE_DRIVE_ENABLED === 'true') {
-      const filename = `test_${test_type}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}.json`;
-      googleDrive.uploadUserData(req.body, filename, userId, 'tests')
-        .catch(err => logger.error('Failed to upload test results to Google Drive:', {
-          message: err.message,
-          data: err.response?.data
-        }));
+    // Upload test results to S3
+    try {
+      const s3Filename = `test_${test_type}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}.json`;
+      const s3Key = `tests/participant-${userId}/${s3Filename}`;
+      const params = {
+        Bucket: s3BucketName,
+        Key: s3Key,
+        Body: JSON.stringify(req.body, null, 2),
+        ContentType: 'application/json',
+        ServerSideEncryption: 'AES256'
+      };
+
+      s3.upload(params).promise()
+        .then(() => logger.info(`[S3] Test result uploaded: ${s3Key}`))
+        .catch(err => logger.error('[S3] Failed to upload test result:', err.message));
+    } catch (s3Err) {
+      logger.error('[S3] Test upload error:', s3Err.message);
     }
 
     res.status(201).json({
@@ -1007,37 +991,45 @@ app.get('/api/admin/export/:dataType', authenticateToken, async (req, res) => {
     const result = await pool.query(query);
     const jsonContent = JSON.stringify(result.rows, null, 2);
 
-    // Optionally push the export to Google Drive
-    let driveInfo = null;
-    if (process.env.GOOGLE_DRIVE_ENABLED === 'true') {
-      try {
-        driveInfo = await googleDrive.uploadExport(jsonContent, filename);
-        logger.info(`Export uploaded to Google Drive: ${filename} -> ${driveInfo.fileId}`);
-      } catch (driveErr) {
-        logger.error('Failed to upload export to Google Drive:', {
-          message: driveErr.message,
-          data: driveErr.response?.data
-        });
-        // Non-fatal: still return the download as normal
-      }
+    // Upload export to S3 for backup
+    let s3Info = null;
+    try {
+      const s3Key = `exports/${filename}`;
+      const params = {
+        Bucket: s3BucketName,
+        Key: s3Key,
+        Body: jsonContent,
+        ContentType: 'application/json',
+        ServerSideEncryption: 'AES256'
+      };
+      await s3.upload(params).promise();
+      s3Info = {
+        bucket: s3BucketName,
+        key: s3Key,
+        url: `https://${s3BucketName}.s3.${s3Config.region}.amazonaws.com/${s3Key}`
+      };
+      logger.info(`[S3] Export uploaded: ${s3Key}`);
+    } catch (s3Err) {
+      logger.error('[S3] Failed to upload export:', s3Err.message);
+      // Non-fatal: still return the download as normal
     }
 
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-    // Include Drive metadata in response headers if available
-    if (driveInfo) {
-      res.setHeader('X-Drive-File-Id', driveInfo.fileId);
-      res.setHeader('X-Drive-Url', driveInfo.driveUrl);
+    // Include S3 metadata in response headers if available
+    if (s3Info) {
+      res.setHeader('X-S3-Bucket', s3Info.bucket);
+      res.setHeader('X-S3-Key', s3Info.key);
     }
 
     res.json({
       data: result.rows,
-      ...(driveInfo ? {
-        drive_backup: {
-          file_id: driveInfo.fileId,
-          url: driveInfo.driveUrl,
-          download_url: driveInfo.downloadUrl
+      ...(s3Info ? {
+        s3_backup: {
+          bucket: s3Info.bucket,
+          key: s3Info.key,
+          url: s3Info.url
         }
       } : {})
     });
