@@ -33,7 +33,8 @@ const VideoRecorder = forwardRef(({ user, api, onUploadComplete, onUploadError }
         } else {
           mimeTypeRef.current = 'video/mp4';
         }
-        recorderOptions.videoBitsPerSecond = 500000; // 500 kbps — ~60-70% smaller than default
+        recorderOptions.videoBitsPerSecond = 200000; // 200 kbps — sufficient for facial analysis at 640x480/15fps
+        // Size estimate: 30 min=45MB, 60 min=90MB, 90 min=135MB
 
         const mediaRecorder = new MediaRecorder(stream, recorderOptions);
         const chunks = [];
@@ -109,7 +110,7 @@ const VideoRecorder = forwardRef(({ user, api, onUploadComplete, onUploadError }
 
         await api.post('/videos/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
-          timeout: 120000, // 2-minute timeout for large files
+          timeout: 600000, // 10-minute timeout — handles 180MB+ on slow connections
           onUploadProgress: (e) => {
             if (e.total) setUploadProgress(Math.round((e.loaded / e.total) * 100));
           }

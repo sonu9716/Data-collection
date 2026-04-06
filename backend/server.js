@@ -183,7 +183,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB max
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB — covers 2hr session at 200kbps (~180MB)
   fileFilter: (req, file, cb) => {
     // Accept both mp4 and webm — frontend records webm (vp8) and labels it correctly now
     const allowedMimes = ['video/mp4', 'video/webm', 'video/webm;codecs=vp8', 'application/json', 'text/csv'];
