@@ -31,7 +31,11 @@ const PORT = process.env.PORT || 5000;
 // can read the real client IP from the X-Forwarded-For header.
 app.set('trust proxy', 1);
 
-app.use(helmet());
+// Helmet for security (configured to allow Google OAuth redirects/popups)
+app.use(helmet({
+  crossOriginOpenerPolicy: { policy: "unsafe-none" },
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+}));
 app.use(cors({
   origin: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:5001'],
   credentials: true
@@ -85,8 +89,9 @@ try {
         connectionString: process.env.DATABASE_URL,
         ssl: { rejectUnauthorized: false },
         max: poolSize,
-        idleTimeoutMillis: 10000,
-        connectionTimeoutMillis: 5000,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+        keepAlive: true,
       }
       : {
         user: process.env.DB_USER || 'postgres',
@@ -95,13 +100,16 @@ try {
         password: process.env.DB_PASSWORD,
         port: process.env.DB_PORT || 5432,
         max: poolSize,
-        idleTimeoutMillis: 10000,
-        connectionTimeoutMillis: 5000,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
       }
   );
 
   pool.on('error', (err) => {
     logger.error('Unexpected error on idle client', err);
+    if (err.message.includes('terminated unexpectedly') || err.message.includes('SSL')) {
+      logger.warn('Idle DB connection was terminated. Marking as needing local fallback if persistent.');
+    }
   });
 } catch (err) {
   logger.warn('PostgreSQL driver not found or failed, using local DB');
@@ -118,8 +126,15 @@ const dbQuery = async (text, params) => {
   try {
     return await originalPoolQuery(text, params);
   } catch (err) {
-    if (err.code === 'ECONNREFUSED' || err.code === '28P01' || err.code === 'ENOTFOUND') {
-      console.log('Database connection failed, switching to local file-based database...');
+    const isNetworkError = 
+      err.code === 'ECONNREFUSED' || 
+      err.code === '28P01' || 
+      err.code === 'ENOTFOUND' ||
+      err.message.includes('terminated unexpectedly') ||
+      err.message.includes('SSL SYSCALL error');
+
+    if (isNetworkError) {
+      console.log(`Database connection failed (${err.message}), switching to local file-based database...`);
       isLocalDb = true;
       const localDb = require('./local-db-manager');
       return localDb.query(text, params);
@@ -484,13 +499,15 @@ app.post('/api/auth/google', async (req, res) => {
     const payload = ticket.getPayload();
     const { email } = payload;
 
-    logger.info(`Google Auth successful for email: ${email}`);
+    logger.info(`Google Auth successful for email: ${email}. Searching in DB...`);
     
     // Check if user exists
     let result = await pool.query(
-      'SELECT id, email, age, gender, institution FROM users WHERE email = $1',
+      'SELECT id, email, password, age, gender, institution FROM users WHERE email = $1',
       [email]
     );
+
+    logger.info(`DB lookup completed for ${email}. Found: ${result.rows.length} rows.`);
 
     let user;
     if (result.rows.length === 0) {
