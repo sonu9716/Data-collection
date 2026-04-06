@@ -147,6 +147,24 @@ s3Config.region = process.env.AWS_REGION || 'ap-south-1';
 const s3 = new AWS.S3(s3Config);
 const s3BucketName = process.env.S3_BUCKET_NAME || 'data-collection-uploads';
 
+// ── S3 helper — upload with up to 3 retries ─────────────────────────────────
+const uploadToS3 = async (params, label = 'file') => {
+  const MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await s3.upload(params).promise();
+      logger.info(`[S3] ${label} uploaded successfully on attempt ${attempt}: ${params.Key}`);
+      return true;
+    } catch (err) {
+      const isLast = attempt === MAX_RETRIES;
+      logger.error(`[S3] Upload attempt ${attempt}/${MAX_RETRIES} failed for ${label}: ${err.message} (code=${err.code})`);
+      if (isLast) return false;
+      await new Promise(r => setTimeout(r, attempt * 1500)); // 1.5 s, 3 s back-off
+    }
+  }
+  return false;
+};
+
 // ============================================================================
 // FILE UPLOAD
 // ============================================================================
@@ -165,13 +183,15 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB max (videos are now compressed on frontend)
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB max
   fileFilter: (req, file, cb) => {
-    const allowedMimes = ['video/mp4', 'video/webm', 'application/json', 'text/csv'];
-    if (allowedMimes.includes(file.mimetype)) {
+    // Accept both mp4 and webm — frontend records webm (vp8) and labels it correctly now
+    const allowedMimes = ['video/mp4', 'video/webm', 'video/webm;codecs=vp8', 'application/json', 'text/csv'];
+    if (allowedMimes.includes(file.mimetype) || file.mimetype.startsWith('video/')) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type'));
+      logger.warn(`[upload] Rejected file with mimetype: ${file.mimetype}`);
+      cb(new Error(`Invalid file type: ${file.mimetype}`));
     }
   }
 });
@@ -606,24 +626,18 @@ app.post('/api/survey/submit', authenticateToken, async (req, res) => {
     const response = result.rows[0];
     logger.info(`Survey submitted for user ${userId}`);
 
-    // Upload survey data to S3
-    try {
+    // Upload survey data to S3 (with retry, non-blocking)
+    setImmediate(async () => {
       const s3Filename = `survey_${assessment_type}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}.json`;
       const s3Key = `surveys/participant-${userId}/${s3Filename}`;
-      const params = {
+      await uploadToS3({
         Bucket: s3BucketName,
         Key: s3Key,
         Body: JSON.stringify(req.body, null, 2),
         ContentType: 'application/json',
         ServerSideEncryption: 'AES256'
-      };
-      
-      s3.upload(params).promise()
-        .then(() => logger.info(`[S3] Survey uploaded: ${s3Key}`))
-        .catch(err => logger.error('[S3] Failed to upload survey:', err.message));
-    } catch (s3Err) {
-      logger.error('[S3] Survey upload error:', s3Err.message);
-    }
+      }, `survey(user=${userId})`);
+    });
 
     res.status(201).json({
       message: 'Survey submitted successfully',
@@ -875,24 +889,18 @@ app.post('/api/tests/submit', authenticateToken, async (req, res) => {
 
     logger.info(`Cognitive test submitted for user ${userId}: ${test_type}`);
 
-    // Upload test results to S3
-    try {
+    // Upload test results to S3 (with retry, non-blocking)
+    setImmediate(async () => {
       const s3Filename = `test_${test_type}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}.json`;
       const s3Key = `tests/participant-${userId}/${s3Filename}`;
-      const params = {
+      await uploadToS3({
         Bucket: s3BucketName,
         Key: s3Key,
         Body: JSON.stringify(req.body, null, 2),
         ContentType: 'application/json',
         ServerSideEncryption: 'AES256'
-      };
-
-      s3.upload(params).promise()
-        .then(() => logger.info(`[S3] Test result uploaded: ${s3Key}`))
-        .catch(err => logger.error('[S3] Failed to upload test result:', err.message));
-    } catch (s3Err) {
-      logger.error('[S3] Test upload error:', s3Err.message);
-    }
+      }, `test(user=${userId},type=${test_type})`);
+    });
 
     res.status(201).json({
       message: 'Test result submitted successfully',
@@ -1047,15 +1055,20 @@ app.get('/api/health', async (req, res) => {
   try {
     await pool.query('SELECT NOW()');
 
+    let s3Status = 'unknown';
     try {
       await s3.headBucket({ Bucket: s3BucketName }).promise();
+      s3Status = 'connected';
     } catch (s3Error) {
-      logger.warn('S3 not available:', s3Error.message);
+      s3Status = `error: ${s3Error.code || s3Error.message}`;
+      logger.warn('[health] S3 not available:', s3Error.message);
     }
 
     res.json({
       status: 'healthy',
       database: 'connected',
+      s3: s3Status,
+      s3_bucket: s3BucketName,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -1065,6 +1078,54 @@ app.get('/api/health', async (req, res) => {
       error: error.message
     });
   }
+});
+
+// ── S3 diagnostic endpoint — use to verify credentials & bucket in production ──
+app.get('/api/debug/s3', async (req, res) => {
+  const result = {
+    bucket: s3BucketName,
+    region: s3Config.region,
+    credentialSource: (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY)
+      ? 'env-variables'
+      : 'iam-role-or-default-chain',
+    accessKeyIdPresent: !!process.env.AWS_ACCESS_KEY_ID,
+    secretKeyPresent: !!process.env.AWS_SECRET_ACCESS_KEY,
+    tests: {}
+  };
+
+  // 1 — headBucket (checks bucket exists + access)
+  try {
+    await s3.headBucket({ Bucket: s3BucketName }).promise();
+    result.tests.headBucket = 'PASS';
+  } catch (e) {
+    result.tests.headBucket = `FAIL: ${e.code} — ${e.message}`;
+  }
+
+  // 2 — putObject (checks write permission)
+  const testKey = `_diagnostics/s3-write-test-${Date.now()}.txt`;
+  try {
+    await s3.putObject({
+      Bucket: s3BucketName,
+      Key: testKey,
+      Body: 'S3 write test',
+      ContentType: 'text/plain'
+    }).promise();
+    result.tests.putObject = 'PASS';
+
+    // 3 — deleteObject (clean up the test file)
+    try {
+      await s3.deleteObject({ Bucket: s3BucketName, Key: testKey }).promise();
+      result.tests.deleteObject = 'PASS';
+    } catch (e) {
+      result.tests.deleteObject = `FAIL: ${e.code}`;
+    }
+  } catch (e) {
+    result.tests.putObject = `FAIL: ${e.code} — ${e.message}`;
+    result.tests.deleteObject = 'SKIPPED';
+  }
+
+  const allPassed = Object.values(result.tests).every(v => v === 'PASS');
+  res.status(allPassed ? 200 : 500).json({ ...result, overall: allPassed ? 'OK' : 'FAILED' });
 });
 
 // ============================================================================
@@ -1083,10 +1144,34 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
   await initializeDatabase();
 
+  // ── S3 startup connectivity check ─────────────────────────────────────────
+  console.log(`\n⏳ Checking S3 connectivity (bucket: ${s3BucketName}, region: ${s3Config.region})...`);
+  try {
+    await s3.headBucket({ Bucket: s3BucketName }).promise();
+    console.log('✓ S3 bucket reachable — uploads will work.');
+    logger.info('[S3] Startup check passed.');
+  } catch (s3Err) {
+    // Non-fatal: app still starts, but log a very clear warning
+    console.error(`\n⚠️  S3 STARTUP CHECK FAILED — uploads will fail!`);
+    console.error(`   Error code : ${s3Err.code}`);
+    console.error(`   Message    : ${s3Err.message}`);
+    if (s3Err.code === 'CredentialsError' || s3Err.code === 'InvalidClientTokenId') {
+      console.error('   ► Fix: Attach an IAM role to this EC2 instance with S3 write permission,');
+      console.error('          OR set AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY in backend/.env');
+    } else if (s3Err.code === 'NoSuchBucket') {
+      console.error(`   ► Fix: Create the S3 bucket "${s3BucketName}" in region ${s3Config.region}`);
+    } else if (s3Err.code === 'AccessDenied') {
+      console.error(`   ► Fix: The IAM role/user lacks s3:HeadBucket + s3:PutObject on "${s3BucketName}"`);
+    }
+    console.error('   ► Diagnostic URL: GET /api/debug/s3\n');
+    logger.error('[S3] Startup check failed:', { code: s3Err.code, message: s3Err.message });
+  }
+
   const server = app.listen(PORT, () => {
     logger.info(`Server running on http://localhost:${PORT}`);
     console.log(`✓ Server running on http://localhost:${PORT}`);
     console.log(`✓ API health check: http://localhost:${PORT}/api/health`);
+    console.log(`✓ S3 diagnostic  : http://localhost:${PORT}/api/debug/s3`);
     console.log(`✓ DB pool size: ${parseInt(process.env.DB_POOL_SIZE) || 5}`);
   });
 
