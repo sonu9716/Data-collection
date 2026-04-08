@@ -130,8 +130,10 @@ const dbQuery = async (text, params) => {
       err.code === 'ECONNREFUSED' || 
       err.code === '28P01' || 
       err.code === 'ENOTFOUND' ||
+      err.code === 'ETIMEDOUT' ||
       err.message.includes('terminated unexpectedly') ||
-      err.message.includes('SSL SYSCALL error');
+      err.message.includes('SSL SYSCALL error') ||
+      err.message.includes('Connection ready');
 
     if (isNetworkError) {
       console.log(`Database connection failed (${err.message}), switching to local file-based database...`);
@@ -501,9 +503,9 @@ app.post('/api/auth/google', async (req, res) => {
 
     logger.info(`Google Auth successful for email: ${email}. Searching in DB...`);
     
-    // Check if user exists
+    // Check if user exists (Google users only need email lookup)
     let result = await pool.query(
-      'SELECT id, email, password, age, gender, institution FROM users WHERE email = $1',
+      'SELECT id, email, age, gender, institution FROM users WHERE email = $1',
       [email]
     );
 

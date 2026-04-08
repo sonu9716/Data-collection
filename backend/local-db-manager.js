@@ -66,7 +66,8 @@ class LocalDB {
 
             // 2. CHECK EMAIL / LOGIN: SELECT ... FROM users WHERE email
             if (sql.includes('from users where email =')) {
-                const user = this.data.users.find(u => u.email === params[0]);
+                const searchEmail = params[0].toLowerCase();
+                const user = this.data.users.find(u => u.email.toLowerCase() === searchEmail);
                 return { rows: user ? [user] : [] };
             }
 
