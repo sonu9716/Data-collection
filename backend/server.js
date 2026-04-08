@@ -135,8 +135,9 @@ const dbQuery = async (text, params) => {
       err.message.includes('SSL SYSCALL error') ||
       err.message.includes('Connection ready');
 
-    if (isNetworkError || true) { // Always fallback for now to be safe
-      console.log(`Database request failed (${err.message}), transparently switching to local database...`);
+    if (isNetworkError || true) { // Always fallback for now to ensure stability
+      console.log(`[DB] Fallback triggered: ${err.message}`);
+      logger.info(`Database connection failed (${err.message}), switching to local file-based database...`);
       isLocalDb = true;
       const localDb = require('./local-db-manager');
       return localDb.query(text, params);
