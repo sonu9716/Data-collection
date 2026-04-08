@@ -647,13 +647,15 @@ app.post('/api/survey/submit', authenticateToken, async (req, res) => {
     setImmediate(async () => {
       const s3Filename = `survey_${assessment_type}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}.json`;
       const s3Key = `surveys/participant-${userId}/${s3Filename}`;
-      await uploadToS3({
+      logger.info(`[S3] Attempting survey upload: s3://${s3BucketName}/${s3Key}`);
+      const ok = await uploadToS3({
         Bucket: s3BucketName,
         Key: s3Key,
         Body: JSON.stringify(req.body, null, 2),
-        ContentType: 'application/json',
-        ServerSideEncryption: 'AES256'
+        ContentType: 'application/json'
       }, `survey(user=${userId})`);
+      if (ok) logger.info(`[S3] Survey upload SUCCESS for user ${userId}`);
+      else logger.error(`[S3] Survey upload FAILED after all retries for user ${userId}`);
     });
 
     res.status(201).json({
@@ -716,18 +718,18 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
 
     // ── Upload to S3 (primary) ──────────────────────────────────────────
     const fs = require('fs');
+    logger.info(`[S3] Attempting video upload: s3://${s3BucketName}/${s3Key}`);
     try {
       const params = {
         Bucket: s3BucketName,
         Key: s3Key,
         Body: fs.createReadStream(req.file.path),
-        ContentType: req.file.mimetype,
-        ServerSideEncryption: 'AES256'
+        ContentType: req.file.mimetype
       };
       await s3.upload(params).promise();
       videoUrl = `https://${s3BucketName}.s3.${s3Config.region}.amazonaws.com/${s3Key}`;
       storageType = 's3';
-      logger.info(`[S3] Video uploaded: ${s3Key} (${fileSizeMB.toFixed(2)} MB)`);
+      logger.info(`[S3] Video uploaded SUCCESS: ${s3Key} (${fileSizeMB.toFixed(2)} MB)`);
     } catch (s3Err) {
       // ── Fallback to local filesystem ─────────────────────────────────────
       logger.error('[S3] Video upload failed, saving locally:', s3Err.message);
@@ -910,13 +912,15 @@ app.post('/api/tests/submit', authenticateToken, async (req, res) => {
     setImmediate(async () => {
       const s3Filename = `test_${test_type}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}.json`;
       const s3Key = `tests/participant-${userId}/${s3Filename}`;
-      await uploadToS3({
+      logger.info(`[S3] Attempting test upload: s3://${s3BucketName}/${s3Key}`);
+      const ok = await uploadToS3({
         Bucket: s3BucketName,
         Key: s3Key,
         Body: JSON.stringify(req.body, null, 2),
-        ContentType: 'application/json',
-        ServerSideEncryption: 'AES256'
+        ContentType: 'application/json'
       }, `test(user=${userId},type=${test_type})`);
+      if (ok) logger.info(`[S3] Test upload SUCCESS for user ${userId}, type=${test_type}`);
+      else logger.error(`[S3] Test upload FAILED after all retries for user ${userId}, type=${test_type}`);
     });
 
     res.status(201).json({
@@ -1024,8 +1028,7 @@ app.get('/api/admin/export/:dataType', authenticateToken, async (req, res) => {
         Bucket: s3BucketName,
         Key: s3Key,
         Body: jsonContent,
-        ContentType: 'application/json',
-        ServerSideEncryption: 'AES256'
+        ContentType: 'application/json'
       };
       await s3.upload(params).promise();
       s3Info = {
