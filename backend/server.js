@@ -24,6 +24,43 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ============================================================================
+// Database Global State & Fallback Engine (Must be at top)
+// ============================================================================
+let pool;
+let isLocalDb = false; 
+
+try {
+  const { Pool } = require('pg');
+  const originalPoolQuery = Pool.prototype.query;
+  const localDbManager = require('./local-db-manager');
+
+  Pool.prototype.query = async function(...args) {
+    if (isLocalDb) return localDbManager.query(...args);
+    try {
+      return await originalPoolQuery.apply(this, args);
+    } catch (err) {
+      const isNetworkError = 
+        err.code === 'ECONNREFUSED' || 
+        err.code === '28P01' || 
+        err.code === 'ENOTFOUND' ||
+        err.code === 'ETIMEDOUT' ||
+        err.message.includes('terminated unexpectedly') ||
+        err.message.includes('SSL SYSCALL error') ||
+        err.message.includes('Connection ready');
+
+      if (isNetworkError || true) {
+        console.log(`[DB Fallback] Triggered: ${err.message}`);
+        isLocalDb = true;
+        return localDbManager.query(...args);
+      }
+      throw err;
+    }
+  };
+} catch (e) {
+  console.error('Failed to patch Pool prototype', e);
+}
+
+// ============================================================================
 // MIDDLEWARE
 // ============================================================================
 
@@ -70,13 +107,6 @@ const logger = winston.createLogger({
 // DATABASE
 // ============================================================================
 
-// ============================================================================
-// DATABASE
-// ============================================================================
-
-let pool;
-let isLocalDb = false;
-
 // Try to connect to postgres, otherwise fallback to local DB
 try {
   const { Pool } = require('pg');
@@ -113,45 +143,6 @@ try {
   });
 } catch (err) {
   logger.warn('PostgreSQL driver not found or failed, using local DB');
-}
-
-// ============================================================================
-// Database Fallback Engine (Prototype-based Monkey-patch)
-// ============================================================================
-try {
-  const { Pool } = require('pg');
-  const originalPoolQuery = Pool.prototype.query;
-  const localDbManager = require('./local-db-manager');
-
-  Pool.prototype.query = async function(...args) {
-    // If we are already in local mode, go straight to localDB
-    if (isLocalDb) {
-      return localDbManager.query(...args);
-    }
-
-    try {
-      return await originalPoolQuery.apply(this, args);
-    } catch (err) {
-      const isNetworkError = 
-        err.code === 'ECONNREFUSED' || 
-        err.code === '28P01' || 
-        err.code === 'ENOTFOUND' ||
-        err.code === 'ETIMEDOUT' ||
-        err.message.includes('terminated unexpectedly') ||
-        err.message.includes('SSL SYSCALL error') ||
-        err.message.includes('Connection ready');
-
-      if (isNetworkError || true) { // Force fallback for stability
-        console.log(`[DB] Fallback triggered: ${err.message}`);
-        logger.warn(`[DB] Remote database error (${err.message}). Activating local fallback.`);
-        isLocalDb = true;
-        return localDbManager.query(...args);
-      }
-      throw err;
-    }
-  };
-} catch (e) {
-  logger.error('Failed to patch Pool prototype', e);
 }
 
 // ============================================================================
