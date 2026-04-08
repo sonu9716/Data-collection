@@ -24,41 +24,11 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ============================================================================
-// Database Global State & Fallback Engine (Must be at top)
+// Database Global State
 // ============================================================================
 let pool;
 let isLocalDb = false; 
-
-try {
-  const { Pool } = require('pg');
-  const originalPoolQuery = Pool.prototype.query;
-  const localDbManager = require('./local-db-manager');
-
-  Pool.prototype.query = async function(...args) {
-    if (isLocalDb) return localDbManager.query(...args);
-    try {
-      return await originalPoolQuery.apply(this, args);
-    } catch (err) {
-      const isNetworkError = 
-        err.code === 'ECONNREFUSED' || 
-        err.code === '28P01' || 
-        err.code === 'ENOTFOUND' ||
-        err.code === 'ETIMEDOUT' ||
-        err.message.includes('terminated unexpectedly') ||
-        err.message.includes('SSL SYSCALL error') ||
-        err.message.includes('Connection ready');
-
-      if (isNetworkError || true) {
-        console.log(`[DB Fallback] Triggered: ${err.message}`);
-        isLocalDb = true;
-        return localDbManager.query(...args);
-      }
-      throw err;
-    }
-  };
-} catch (e) {
-  console.error('Failed to patch Pool prototype', e);
-}
+const localDbManager = require('./local-db-manager');
 
 // ============================================================================
 // MIDDLEWARE
@@ -141,6 +111,22 @@ try {
       logger.warn('Idle DB connection was terminated. Marking as needing local fallback if persistent.');
     }
   });
+
+  // ==========================================================================
+  // INSTANCE-LEVEL MONKEY PATCH (Most Reliable)
+  // ==========================================================================
+  const originalQuery = pool.query.bind(pool);
+  pool.query = async (...args) => {
+    if (isLocalDb) return localDbManager.query(...args);
+    try {
+      return await originalQuery(...args);
+    } catch (err) {
+      console.log(`[DB Fallback] Request failed: ${err.message}. Switching to Local DB.`);
+      isLocalDb = true;
+      return localDbManager.query(...args);
+    }
+  };
+
 } catch (err) {
   logger.warn('PostgreSQL driver not found or failed, using local DB');
 }
