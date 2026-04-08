@@ -187,6 +187,7 @@ class LocalDB {
 
             // Default
             console.log('LocalDB: Unhandled query:', sql);
+            if (sql.includes('select') && sql.includes('from')) return { rows: [] };
             return { rows: [] };
 
         } catch (err) {
