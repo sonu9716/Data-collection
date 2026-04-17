@@ -59,9 +59,9 @@ free -h
 # ============================================================================
 # STEP 3: Install Node.js 20.x (LTS)
 # ============================================================================
-print_step "3/10 - Installing Node.js 20.x LTS..."
+print_step "3/10 - Installing Node.js 20.x LTS and FFmpeg..."
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt install -y nodejs
+apt install -y nodejs ffmpeg
 echo "Node.js version: $(node -v)"
 echo "npm version: $(npm -v)"
 

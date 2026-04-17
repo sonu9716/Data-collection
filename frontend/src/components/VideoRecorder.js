@@ -98,7 +98,7 @@ const VideoRecorder = forwardRef(({ user, api, onUploadComplete, onUploadError }
   const uploadVideo = async (videoBlob, mimeType) => {
     setUploading(true);
     setUploadProgress(0);
-    const ext = mimeType === 'video/webm' ? 'webm' : 'mp4';
+    const ext = mimeType.includes('webm') ? 'webm' : 'mp4';
     const filename = `survey_recording.${ext}`;
 
     const MAX_RETRIES = 3;

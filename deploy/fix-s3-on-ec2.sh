@@ -40,13 +40,13 @@ git pull origin main || warn "git pull failed — continuing with existing code"
 ok "Code updated"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 2. Fix nginx client_max_body_size (50M → 110M)
+# 2. Fix nginx client_max_body_size (50M → 510M)
 # ──────────────────────────────────────────────────────────────────────────────
 echo ""
 echo "[ Step 2 ] Checking nginx upload size limit..."
 if grep -q "client_max_body_size 50M" "$NGINX_CONF" 2>/dev/null; then
-    sed -i 's/client_max_body_size 50M/client_max_body_size 110M/g' "$NGINX_CONF"
-    ok "Fixed nginx client_max_body_size: 50M → 110M"
+    sed -i 's/client_max_body_size 50M/client_max_body_size 510M/g' "$NGINX_CONF"
+    ok "Fixed nginx client_max_body_size: 50M → 510M"
     nginx -t && systemctl reload nginx
     ok "Nginx reloaded"
 elif grep -q "client_max_body_size" "$NGINX_CONF" 2>/dev/null; then
@@ -55,7 +55,7 @@ elif grep -q "client_max_body_size" "$NGINX_CONF" 2>/dev/null; then
 else
     warn "client_max_body_size not found in $NGINX_CONF — adding it manually"
     # Insert into http{} block
-    sed -i '/location \/api\/ {/i\        client_max_body_size 110M;' "$NGINX_CONF"
+    sed -i '/location \/api\/ {/i\        client_max_body_size 510M;' "$NGINX_CONF"
     nginx -t && systemctl reload nginx
 fi
 

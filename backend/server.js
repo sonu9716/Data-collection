@@ -19,6 +19,9 @@ const rateLimit = require('express-rate-limit');
 const googleDrive = require('./google-drive-manager');
 const { OAuth2Client } = require('google-auth-library');
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -701,10 +704,34 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
 
     const videoType = req.body.video_type || 'cognitive_test';
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '');
-    const extension = req.file.mimetype.includes('webm') ? 'webm' : 'mp4';
-    const filename = `${videoType}_${timestamp}.${extension}`;
-    const s3Key = `videos/participant-${userId}/${filename}`;
+    
+    // Robust extension detection
+    const mime = (req.file.mimetype || '').toLowerCase();
+    const originalName = (req.file.originalname || '').toLowerCase();
+    const isWebm = mime.includes('webm') || originalName.endsWith('.webm');
+    const extension = isWebm ? 'webm' : 'mp4';
+    
+    const finalFilename = `${videoType}_${timestamp}.${extension}`;
+    const s3Key = `videos/participant-${userId}/${finalFilename}`;
     const fileSizeMB = req.file.size / (1024 * 1024);
+
+    let finalFilePath = req.file.path;
+
+    // ── Fix WebM Metadata (Re-mux using FFmpeg) ────────────────────────
+    if (isWebm) {
+      const fixedPath = req.file.path + '_fixed.webm';
+      try {
+        logger.info(`[FFmpeg] Fixing WebM metadata for: ${req.file.originalname}`);
+        // '-c copy' is fast and lossless (no re-encoding), fixes the header
+        await execPromise(`ffmpeg -i "${req.file.path}" -c copy "${fixedPath}"`);
+        finalFilePath = fixedPath;
+        logger.info(`[FFmpeg] Metadata fixed successfully.`);
+      } catch (err) {
+        logger.error(`[FFmpeg] Failed to fix metadata (using raw file): ${err.message}`);
+        // Fallback to original file
+        finalFilePath = req.file.path;
+      }
+    }
 
     let videoUrl = '';
     let storageType = 'local';
@@ -716,8 +743,8 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
       const params = {
         Bucket: s3BucketName,
         Key: s3Key,
-        Body: fs.createReadStream(req.file.path),
-        ContentType: req.file.mimetype
+        Body: fs.createReadStream(finalFilePath),
+        ContentType: isWebm ? 'video/webm' : 'video/mp4'
       };
       await s3.upload(params).promise();
       videoUrl = `https://${s3BucketName}.s3.${s3Config.region}.amazonaws.com/${s3Key}`;
@@ -735,10 +762,15 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
       storageType = 'local';
     }
 
-    // CLEANUP: Delete the temp file if it still exists (uploaded to S3)
+    // CLEANUP: Delete the temp files
     if (fs.existsSync(req.file.path)) {
       fs.unlink(req.file.path, (err) => {
         if (err) logger.error('Failed to delete temp video file:', err);
+      });
+    }
+    if (finalFilePath !== req.file.path && fs.existsSync(finalFilePath)) {
+      fs.unlink(finalFilePath, (err) => {
+        if (err) logger.error('Failed to delete fixed video file:', err);
       });
     }
 
