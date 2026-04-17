@@ -117,11 +117,18 @@ try {
   // ==========================================================================
   const originalQuery = pool.query.bind(pool);
   pool.query = async (...args) => {
-    if (isLocalDb) return localDbManager.query(...args);
+    console.log(`[DB TRACE] pool.query called with: ${args[0]}`);
+    if (isLocalDb) {
+       console.log(`[DB TRACE] Routing to LocalDb`);
+       return localDbManager.query(...args);
+    }
     try {
-      return await originalQuery(...args);
+      console.log(`[DB TRACE] Executing originalQuery`);
+      const res = await originalQuery(...args);
+      console.log(`[DB TRACE] Execution successful`);
+      return res;
     } catch (err) {
-      console.log(`[DB Fallback] Request failed: ${err.message}. Switching to Local DB.`);
+      console.log(`[DB TRACE] Request failed: ${err.message}. Switching to Local DB.`);
       isLocalDb = true;
       return localDbManager.query(...args);
     }
@@ -694,7 +701,8 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
 
     const videoType = req.body.video_type || 'cognitive_test';
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '');
-    const filename = `${videoType}_${timestamp}.mp4`;
+    const extension = req.file.mimetype.includes('webm') ? 'webm' : 'mp4';
+    const filename = `${videoType}_${timestamp}.${extension}`;
     const s3Key = `videos/participant-${userId}/${filename}`;
     const fileSizeMB = req.file.size / (1024 * 1024);
 
