@@ -708,8 +708,11 @@ app.post('/api/videos/upload', authenticateToken, upload.single('video'), async 
     // Robust extension detection
     const mime = (req.file.mimetype || '').toLowerCase();
     const originalName = (req.file.originalname || '').toLowerCase();
-    const isWebm = mime.includes('webm') || originalName.endsWith('.webm');
+    // Some browsers use video/x-matroska for WebM recordings
+    const isWebm = mime.includes('webm') || mime.includes('matroska') || originalName.endsWith('.webm');
     const extension = isWebm ? 'webm' : 'mp4';
+    
+    logger.info(`[Upload] Processing video: name=${originalName}, mime=${mime}, isWebm=${isWebm}, extension=${extension}`);
     
     const finalFilename = `${videoType}_${timestamp}.${extension}`;
     const s3Key = `videos/participant-${userId}/${finalFilename}`;
@@ -1195,6 +1198,18 @@ app.use((err, req, res, next) => {
 // ============================================================================
 
 const startServer = async () => {
+  // ── FFmpeg Verification ──────────────────────────────────────────────────
+  try {
+    const { stdout } = await execPromise('ffmpeg -version');
+    const version = stdout.split('\n')[0];
+    console.log(`✓ FFmpeg detected: ${version}`);
+    logger.info(`[System] FFmpeg detected: ${version}`);
+  } catch (err) {
+    console.error('⚠️  FFmpeg NOT found! Video metadata fixing will be DISABLED.');
+    console.error('   ► Fix: sudo apt update && sudo apt install ffmpeg -y');
+    logger.warn('[System] FFmpeg not found');
+  }
+
   await initializeDatabase();
 
   // ── S3 startup connectivity check ─────────────────────────────────────────
